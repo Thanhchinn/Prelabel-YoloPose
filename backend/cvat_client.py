@@ -1,7 +1,15 @@
+import os
+import sys
 import requests
 import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+
+# Đảm bảo thư mục backend nằm trong sys.path
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 from config import CVAT_HOST, CVAT_USER, CVAT_PASS
 from converter import AnnotationConverter
 
@@ -17,7 +25,7 @@ class CVATClient:
     def check_connection(self) -> Dict[str, Any]:
         """Kiểm tra xem CVAT Local có đang hoạt động hay không."""
         try:
-            res = requests.get(f"{self.host}/api/server/about", timeout=3)
+            res = requests.get(f"{self.host}/api/server/about", timeout=1)
             if res.status_code == 200:
                 self.is_connected = True
                 return {"online": True, "details": res.json()}

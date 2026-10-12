@@ -27,6 +27,12 @@
 
 ## 🛠️ HƯỚNG DẪN KHỞI CHẠY (QUICK START)
 
+### 0. Thiết lập môi trường (Environment)
+Copy file cấu hình mẫu và điền thông tin tài khoản CVAT nếu có:
+```bash
+cp .env.example .env   # (hoặc copy .env.example thành .env trên Windows)
+```
+
 ### 1. Khởi động Backend (FastAPI)
 Mở một cửa sổ Terminal tại thư mục gốc dự án:
 ```bash

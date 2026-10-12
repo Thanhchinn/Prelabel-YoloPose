@@ -43,6 +43,22 @@ export default function StudioView({ onNavigateToCVAT }) {
     }
   };
 
+  // Tự động tải prediction của ảnh được chọn nếu chưa có trong map
+  useEffect(() => {
+    if (selectedImage && !predictionsMap[selectedImage.name] && selectedImage.has_prediction) {
+      api.getImagePrediction(selectedImage.name)
+        .then((data) => {
+          if (data && data.predictions) {
+            setPredictionsMap((prev) => ({
+              ...prev,
+              [selectedImage.name]: data.predictions,
+            }));
+          }
+        })
+        .catch((err) => console.error("Error loading cached prediction:", err));
+    }
+  }, [selectedImage]);
+
   const handleFileUpload = async (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;

@@ -26,7 +26,20 @@ CVAT_USER = os.getenv("CVAT_USER", "admin")
 CVAT_PASS = os.getenv("CVAT_PASS", "admin12345")
 
 # Cấu hình Model YOLO 26 Pose
-MODEL_WEIGHTS_PATH = os.getenv("MODEL_WEIGHTS_PATH", str(WEIGHTS_DIR / "yolo26-pose.pt"))
+raw_weights = os.getenv("MODEL_WEIGHTS_PATH", "backend/weights/yolo26-pose.pt")
+weights_candidate = Path(raw_weights)
+if not weights_candidate.is_absolute():
+    if (BASE_DIR / weights_candidate).exists():
+        MODEL_WEIGHTS_PATH = str((BASE_DIR / weights_candidate).resolve())
+    elif (WEIGHTS_DIR / weights_candidate.name).exists():
+        MODEL_WEIGHTS_PATH = str((WEIGHTS_DIR / weights_candidate.name).resolve())
+    elif (BASE_DIR / "yolo11n-pose.pt").exists():
+        MODEL_WEIGHTS_PATH = str((BASE_DIR / "yolo11n-pose.pt").resolve())
+    else:
+        MODEL_WEIGHTS_PATH = str((BASE_DIR / weights_candidate).resolve())
+else:
+    MODEL_WEIGHTS_PATH = str(weights_candidate.resolve())
+
 CONF_THRESHOLD = float(os.getenv("CONF_THRESHOLD", "0.5"))
 KPT_CONF_THRESHOLD = float(os.getenv("KPT_CONF_THRESHOLD", "0.5"))
 

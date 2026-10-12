@@ -1,5 +1,14 @@
+import os
+import sys
 import math
+from pathlib import Path
 from typing import List, Dict, Any, Optional
+
+# Đảm bảo thư mục backend nằm trong sys.path
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 from config import COCO_KEYPOINTS
 from schemas import MetricsResponse, KeypointMetricDetail
 

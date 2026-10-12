@@ -1,7 +1,14 @@
 import os
+import sys
 import shutil
 import random
 from pathlib import Path
+
+# Đảm bảo thư mục backend nằm trong sys.path
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 from typing import Dict, Any, Optional
 import argparse
 

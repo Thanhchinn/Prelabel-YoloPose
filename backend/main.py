@@ -1,6 +1,13 @@
 import os
+import sys
 import shutil
 from pathlib import Path
+
+# Đảm bảo thư mục backend nằm trong sys.path để import các module nội bộ
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 from typing import List, Optional
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -106,6 +113,22 @@ def list_uploaded_images():
                 "has_prediction": json_cache.exists()
             })
     return {"total": len(images), "images": images}
+
+@app.get("/api/images/{image_name}/prediction")
+def get_image_prediction(image_name: str):
+    """Lấy kết quả dự đoán đã lưu trong cache của một ảnh."""
+    import json
+    p = Path(image_name)
+    json_path = OUTPUT_DIR / f"{p.stem}.json"
+    if not json_path.exists():
+        raise HTTPException(status_code=404, detail="Chưa có kết quả dự đoán cho ảnh này.")
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/predict", response_model=BatchPredictResponse)
 def run_prediction(config: Optional[PredictConfig] = None):

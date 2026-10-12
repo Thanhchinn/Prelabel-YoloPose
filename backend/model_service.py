@@ -1,6 +1,13 @@
 import os
+import sys
 import json
 from pathlib import Path
+
+# Đảm bảo thư mục backend nằm trong sys.path
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 from typing import List, Dict, Any, Optional
 import cv2
 import numpy as np
@@ -25,6 +32,13 @@ class YOLO26PoseService:
 
     def _initialize_model(self):
         """Khởi tạo mô hình YOLO 26 Pose nếu có file weights."""
+        if not self.weights_path.is_absolute():
+            from config import BASE_DIR, WEIGHTS_DIR
+            if (BASE_DIR / self.weights_path).exists():
+                self.weights_path = (BASE_DIR / self.weights_path).resolve()
+            elif (WEIGHTS_DIR / self.weights_path.name).exists():
+                self.weights_path = (WEIGHTS_DIR / self.weights_path.name).resolve()
+
         if self.weights_path.exists():
             try:
                 from ultralytics import YOLO

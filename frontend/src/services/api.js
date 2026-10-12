@@ -32,6 +32,12 @@ export const api = {
     return res.json();
   },
 
+  async getImagePrediction(imageName) {
+    const res = await fetch(`${API_BASE}/images/${encodeURIComponent(imageName)}/prediction`);
+    if (!res.ok) return null;
+    return res.json();
+  },
+
   async predict(config = {}) {
     const res = await fetch(`${API_BASE}/predict`, {
       method: "POST",
