@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  # Backend API: FastAPI + YOLO 26 Pose Engine
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: pose_prelabel_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - CVAT_HOST=http://cvat-server:8080
+      - CVAT_USER=admin
+      - CVAT_PASS=admin12345
+    volumes:
+      - ./data:/app/data
+      - ./backend/weights:/app/backend/weights
+    networks:
+      - cvat_network
+
+  # Frontend: React + Tailwind UI
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pose_prelabel_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - cvat_network
+
+networks:
+  cvat_network:
+    name: cvat_network
+    driver: bridge

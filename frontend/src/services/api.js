@@ -1,0 +1,84 @@
+const API_BASE = "http://localhost:8000/api";
+
+export const api = {
+  async getHealth() {
+    const res = await fetch(`${API_BASE}/health`);
+    if (!res.ok) throw new Error("Backend connection failed");
+    return res.json();
+  },
+
+  async getConfig() {
+    const res = await fetch(`${API_BASE}/config`);
+    if (!res.ok) throw new Error("Failed to fetch system config");
+    return res.json();
+  },
+
+  async uploadImages(files) {
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append("files", files[i]);
+    }
+    const res = await fetch(`${API_BASE}/upload`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) throw new Error("Upload failed");
+    return res.json();
+  },
+
+  async listImages() {
+    const res = await fetch(`${API_BASE}/images`);
+    if (!res.ok) throw new Error("Failed to load images");
+    return res.json();
+  },
+
+  async predict(config = {}) {
+    const res = await fetch(`${API_BASE}/predict`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) throw new Error("Inference failed");
+    return res.json();
+  },
+
+  async syncToCVAT(payload) {
+    const res = await fetch(`${API_BASE}/cvat/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("CVAT sync failed");
+    return res.json();
+  },
+
+  async listCVATTasks() {
+    const res = await fetch(`${API_BASE}/cvat/tasks`);
+    if (!res.ok) throw new Error("Failed to fetch CVAT tasks");
+    return res.json();
+  },
+
+  async evaluateMetrics(taskId = 1) {
+    const res = await fetch(`${API_BASE}/metrics/evaluate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task_id: taskId }),
+    });
+    if (!res.ok) throw new Error("Metrics evaluation failed");
+    return res.json();
+  },
+
+  async exportDataset(taskId = 1, datasetName = "yolo26_dataset", valRatio = 0.2) {
+    const res = await fetch(`${API_BASE}/dataset/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        task_id: taskId,
+        dataset_name: datasetName,
+        val_ratio: valRatio,
+      }),
+    });
+    if (!res.ok) throw new Error("Dataset export failed");
+    return res.json();
+  },
+};

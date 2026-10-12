@@ -1,0 +1,157 @@
+{
+  "image_name": "gB_6_s1_2019-03-11T13_55_14_01_00_rgb_body_033400fbc8__f000002455.png",
+  "image_url": "/api/images/uploads/gB_6_s1_2019-03-11T13_55_14_01_00_rgb_body_033400fbc8__f000002455.png",
+  "width": 1280,
+  "height": 720,
+  "person_count": 1,
+  "predictions": [
+    {
+      "person_id": 1,
+      "bbox": [
+        205.73,
+        1.07,
+        876.74,
+        709.54
+      ],
+      "score": 0.86,
+      "keypoints": [
+        {
+          "id": 0,
+          "name": "nose",
+          "x": 547.95,
+          "y": 88.77,
+          "conf": 0.994,
+          "visible": 2
+        },
+        {
+          "id": 1,
+          "name": "left_eye",
+          "x": 525.63,
+          "y": 53.2,
+          "conf": 0.568,
+          "visible": 2
+        },
+        {
+          "id": 2,
+          "name": "right_eye",
+          "x": 494.45,
+          "y": 66.27,
+          "conf": 0.995,
+          "visible": 2
+        },
+        {
+          "id": 3,
+          "name": "left_ear",
+          "x": 458.22,
+          "y": 63.61,
+          "conf": 0.004,
+          "visible": 0
+        },
+        {
+          "id": 4,
+          "name": "right_ear",
+          "x": 370.85,
+          "y": 119.61,
+          "conf": 0.987,
+          "visible": 2
+        },
+        {
+          "id": 5,
+          "name": "left_shoulder",
+          "x": 446.86,
+          "y": 242.47,
+          "conf": 0.989,
+          "visible": 2
+        },
+        {
+          "id": 6,
+          "name": "right_shoulder",
+          "x": 400.82,
+          "y": 386.34,
+          "conf": 0.982,
+          "visible": 2
+        },
+        {
+          "id": 7,
+          "name": "left_elbow",
+          "x": 629.91,
+          "y": 316.62,
+          "conf": 0.92,
+          "visible": 2
+        },
+        {
+          "id": 8,
+          "name": "right_elbow",
+          "x": 621.86,
+          "y": 593.92,
+          "conf": 0.908,
+          "visible": 2
+        },
+        {
+          "id": 9,
+          "name": "left_wrist",
+          "x": 789.88,
+          "y": 247.55,
+          "conf": 0.964,
+          "visible": 2
+        },
+        {
+          "id": 10,
+          "name": "right_wrist",
+          "x": 769.53,
+          "y": 427.06,
+          "conf": 0.973,
+          "visible": 2
+        },
+        {
+          "id": 11,
+          "name": "left_hip",
+          "x": 581.17,
+          "y": 598.19,
+          "conf": 0.856,
+          "visible": 2
+        },
+        {
+          "id": 12,
+          "name": "right_hip",
+          "x": 549.59,
+          "y": 685.22,
+          "conf": 0.776,
+          "visible": 2
+        },
+        {
+          "id": 13,
+          "name": "left_knee",
+          "x": 856.59,
+          "y": 504.1,
+          "conf": 0.439,
+          "visible": 1
+        },
+        {
+          "id": 14,
+          "name": "right_knee",
+          "x": 843.62,
+          "y": 610.07,
+          "conf": 0.394,
+          "visible": 1
+        },
+        {
+          "id": 15,
+          "name": "left_ankle",
+          "x": 812.2,
+          "y": 512.27,
+          "conf": 0.083,
+          "visible": 0
+        },
+        {
+          "id": 16,
+          "name": "right_ankle",
+          "x": 826.63,
+          "y": 587.05,
+          "conf": 0.057,
+          "visible": 0
+        }
+      ]
+    }
+  ]
+}

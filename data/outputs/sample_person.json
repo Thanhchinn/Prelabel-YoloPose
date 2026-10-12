@@ -1,0 +1,8 @@
+{
+  "image_name": "sample_person.jpg",
+  "image_url": "/api/images/uploads/sample_person.jpg",
+  "width": 1280,
+  "height": 720,
+  "person_count": 0,
+  "predictions": []
+}
