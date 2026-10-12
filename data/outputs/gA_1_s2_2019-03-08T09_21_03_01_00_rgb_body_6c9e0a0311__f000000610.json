@@ -3,24 +3,23 @@
   "image_url": "/api/images/uploads/gA_1_s2_2019-03-08T09_21_03_01_00_rgb_body_6c9e0a0311__f000000610.png",
   "width": 1280,
   "height": 720,
-  "person_count": 1,
   "predictions": [
     {
       "person_id": 1,
       "bbox": [
-        48.29,
-        6.33,
-        1037.92,
-        711.99
+        230.64,
+        131.52,
+        1041.02,
+        706.79
       ],
-      "score": 0.839,
+      "score": 1.0,
       "keypoints": [
         {
           "id": 0,
           "name": "nose",
           "x": 569.34,
           "y": 248.09,
-          "conf": 0.997,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -28,7 +27,7 @@
           "name": "left_eye",
           "x": 599.96,
           "y": 218.65,
-          "conf": 0.916,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -36,7 +35,7 @@
           "name": "right_eye",
           "x": 553.35,
           "y": 194.73,
-          "conf": 0.996,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -44,7 +43,7 @@
           "name": "left_ear",
           "x": 592.03,
           "y": 208.45,
-          "conf": 0.029,
+          "conf": 1.0,
           "visible": 0
         },
         {
@@ -52,7 +51,7 @@
           "name": "right_ear",
           "x": 469.39,
           "y": 146.52,
-          "conf": 0.981,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -60,7 +59,7 @@
           "name": "left_shoulder",
           "x": 538.68,
           "y": 268.69,
-          "conf": 0.997,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -68,7 +67,7 @@
           "name": "right_shoulder",
           "x": 348.53,
           "y": 317.63,
-          "conf": 0.993,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -76,7 +75,7 @@
           "name": "left_elbow",
           "x": 636.16,
           "y": 297.98,
-          "conf": 0.976,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -84,7 +83,7 @@
           "name": "right_elbow",
           "x": 245.64,
           "y": 591.58,
-          "conf": 0.929,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -92,7 +91,7 @@
           "name": "left_wrist",
           "x": 813.61,
           "y": 233.51,
-          "conf": 0.946,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -100,7 +99,7 @@
           "name": "right_wrist",
           "x": 424.17,
           "y": 691.79,
-          "conf": 0.93,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -108,7 +107,7 @@
           "name": "left_hip",
           "x": 711.63,
           "y": 594.52,
-          "conf": 0.946,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -116,7 +115,7 @@
           "name": "right_hip",
           "x": 595.17,
           "y": 660.71,
-          "conf": 0.893,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -124,7 +123,7 @@
           "name": "left_knee",
           "x": 985.48,
           "y": 484.06,
-          "conf": 0.742,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -132,7 +131,7 @@
           "name": "right_knee",
           "x": 905.32,
           "y": 531.66,
-          "conf": 0.633,
+          "conf": 1.0,
           "visible": 2
         },
         {
@@ -140,7 +139,7 @@
           "name": "left_ankle",
           "x": 1026.02,
           "y": 633.12,
-          "conf": 0.377,
+          "conf": 1.0,
           "visible": 1
         },
         {
@@ -148,7 +147,7 @@
           "name": "right_ankle",
           "x": 1023.25,
           "y": 609.04,
-          "conf": 0.264,
+          "conf": 1.0,
           "visible": 1
         }
       ]

@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import requests
 import json
 from pathlib import Path
@@ -20,17 +21,26 @@ class CVATClient:
         self.password = password
         self.session = requests.Session()
         self.auth_token: Optional[str] = None
-        self.is_connected = False
+        self.is_authenticated = False
+
+    def _ensure_authenticated(self) -> bool:
+        """Đảm bảo session có auth token hợp lệ."""
+        if not self.auth_token or not self.is_authenticated:
+            # Tải lại username/password mới nhất từ config nếu có thay đổi
+            from config import CVAT_HOST, CVAT_USER, CVAT_PASS
+            self.host = CVAT_HOST.rstrip("/")
+            self.username = CVAT_USER
+            self.password = CVAT_PASS
+            return self.authenticate()
+        return True
 
     def check_connection(self) -> Dict[str, Any]:
         """Kiểm tra xem CVAT Local có đang hoạt động hay không."""
         try:
             res = requests.get(f"{self.host}/api/server/about", timeout=1)
             if res.status_code == 200:
-                self.is_connected = True
                 return {"online": True, "details": res.json()}
         except Exception as e:
-            self.is_connected = False
             return {"online": False, "error": str(e)}
         return {"online": False, "error": "Unknown status"}
 
@@ -47,19 +57,41 @@ class CVATClient:
                 self.auth_token = data.get("key")
                 if self.auth_token:
                     self.session.headers.update({"Authorization": f"Token {self.auth_token}"})
-                self.is_connected = True
+                self.is_authenticated = True
+                print(f"[CVAT Client] Authenticated successfully as '{self.username}'.")
                 return True
             else:
                 print(f"[CVAT Client] Login failed: {res.status_code} - {res.text}")
+                self.is_authenticated = False
                 return False
         except Exception as e:
             print(f"[CVAT Client] Connection error during auth: {e}")
+            self.is_authenticated = False
             return False
+
+    def get_task_label_map(self, task_id: int) -> Dict[str, int]:
+        """Lấy ánh xạ từ tên label/sublabel sang label_id trên CVAT."""
+        self._ensure_authenticated()
+        try:
+            url = f"{self.host}/api/labels?task_id={task_id}"
+            res = self.session.get(url, timeout=10)
+            if res.status_code == 200:
+                results = res.json().get("results", [])
+                label_map = {}
+                for r in results:
+                    label_map[r.get("name")] = r.get("id")
+                    for s in r.get("sublabels", []):
+                        label_map[s.get("name")] = s.get("id")
+                return label_map
+        except Exception as e:
+            print(f"[CVAT Client] Error fetching task label map: {e}")
+        return {}
 
     def create_task(self, task_name: str) -> Optional[int]:
         """Tạo mới một Task trên CVAT với cấu trúc Skeleton 17 điểm COCO."""
-        if not self.is_connected:
-            self.authenticate()
+        if not self._ensure_authenticated():
+            print("[CVAT Client] Cannot create task: Authentication failed.")
+            return None
 
         labels = AnnotationConverter.get_cvat_skeleton_spec()
         payload = {
@@ -71,6 +103,11 @@ class CVATClient:
         try:
             url = f"{self.host}/api/tasks"
             res = self.session.post(url, json=payload, timeout=10)
+            if res.status_code == 401:
+                # Token hết hạn hoặc chưa nhận, thử login lại 1 lần
+                self.authenticate()
+                res = self.session.post(url, json=payload, timeout=10)
+
             if res.status_code in (200, 201):
                 task_data = res.json()
                 return task_data.get("id")
@@ -82,15 +119,18 @@ class CVATClient:
             return None
 
     def upload_task_data(self, task_id: int, image_paths: List[Path]) -> bool:
-        """Tải các file ảnh lên Task của CVAT."""
-        if not self.is_connected:
-            self.authenticate()
+        """Tải các file ảnh lên Task của CVAT và chờ CVAT import xong các frames."""
+        self._ensure_authenticated()
 
+        opened_files = []
+        files = []
         try:
             url = f"{self.host}/api/tasks/{task_id}/data"
-            files = []
-            for img_p in image_paths:
-                files.append(("client_files", (img_p.name, open(str(img_p), "rb"), "image/jpeg")))
+            for idx, img_p in enumerate(image_paths):
+                f_handle = open(str(img_p), "rb")
+                opened_files.append(f_handle)
+                mime = "image/png" if img_p.suffix.lower() == ".png" else "image/jpeg"
+                files.append((f"client_files[{idx}]", (img_p.name, f_handle, mime)))
 
             data = {
                 "image_quality": 85,
@@ -98,33 +138,67 @@ class CVATClient:
             }
 
             res = self.session.post(url, data=data, files=files, timeout=60)
-            # Đóng các file handlers
-            for _, f_tuple, _ in files:
-                f_tuple[1].close()
+            if res.status_code not in (200, 201, 202):
+                print(f"[CVAT Client] Upload data failed: {res.status_code} - {res.text}")
+                return False
 
-            return res.status_code in (200, 201, 202)
+            # Nếu CVAT xử lý bất đồng bộ (202), chờ cho task import xong
+            if res.status_code == 202:
+                rq_id = res.json().get("rq_id")
+                if rq_id:
+                    self._wait_for_request_finished(rq_id, max_seconds=20)
+
+            return True
         except Exception as e:
             print(f"[CVAT Client] Error uploading image files to task: {e}")
             return False
+        finally:
+            for f in opened_files:
+                try:
+                    f.close()
+                except Exception:
+                    pass
+
+    def _wait_for_request_finished(self, rq_id: str, max_seconds: int = 20) -> bool:
+        """Chờ CVAT xử lý xong dữ liệu ảnh."""
+        url = f"{self.host}/api/requests/{rq_id}"
+        start_time = time.time()
+        while time.time() - start_time < max_seconds:
+            try:
+                res = self.session.get(url, timeout=5)
+                if res.status_code == 200:
+                    status = res.json().get("status")
+                    if status == "finished":
+                        return True
+                    elif status == "failed":
+                        print(f"[CVAT Client] Data processing failed: {res.json().get('message')}")
+                        return False
+            except Exception:
+                pass
+            time.sleep(1)
+        return False
 
     def upload_annotations(self, task_id: int, annotations_data: Dict[str, Any]) -> bool:
         """Đẩy nhãn pre-label vào Task của CVAT."""
-        if not self.is_connected:
-            self.authenticate()
+        self._ensure_authenticated()
 
         try:
             url = f"{self.host}/api/tasks/{task_id}/annotations"
             params = {"action": "create"}
             res = self.session.patch(url, params=params, json=annotations_data, timeout=30)
-            return res.status_code in (200, 201, 202)
+            if res.status_code in (200, 201, 202):
+                print(f"[CVAT Client] Pre-labels pushed successfully to Task {task_id}.")
+                return True
+            else:
+                print(f"[CVAT Client] Push annotations failed: {res.status_code} - {res.text}")
+                return False
         except Exception as e:
             print(f"[CVAT Client] Error pushing annotations to task: {e}")
             return False
 
     def get_task_annotations(self, task_id: int) -> Optional[Dict[str, Any]]:
         """Lấy toàn bộ annotations hiện tại của Task (dùng khi annotator đã sửa xong)."""
-        if not self.is_connected:
-            self.authenticate()
+        self._ensure_authenticated()
 
         try:
             url = f"{self.host}/api/tasks/{task_id}/annotations"
@@ -136,20 +210,39 @@ class CVATClient:
             print(f"[CVAT Client] Error getting annotations from task: {e}")
             return None
 
-    def list_tasks(self) -> List[Dict[str, Any]]:
-        """Lấy danh sách các tasks gần đây trên CVAT."""
-        if not self.is_connected:
-            self.authenticate()
+    def list_tasks(self, filter_prefix: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Lấy danh sách các tasks trên CVAT. Nếu filter_prefix được chỉ định, chỉ trả về tasks có tên bắt đầu bằng prefix đó."""
+        self._ensure_authenticated()
 
         try:
             url = f"{self.host}/api/tasks"
-            res = self.session.get(url, params={"page_size": 20}, timeout=10)
+            params = {"page_size": 100, "sort": "-id"}
+            if filter_prefix:
+                params["search"] = filter_prefix
+            res = self.session.get(url, params=params, timeout=10)
             if res.status_code == 200:
                 data = res.json()
-                return data.get("results", [])
+                results = data.get("results", [])
+                if filter_prefix:
+                    results = [t for t in results if t.get("name", "").startswith(filter_prefix)]
+                return results
             return []
         except Exception as e:
             print(f"[CVAT Client] Error listing tasks: {e}")
             return []
+
+    def get_task_meta(self, task_id: int) -> Optional[Dict[str, Any]]:
+        """Lấy metadata các frames của Task từ CVAT."""
+        self._ensure_authenticated()
+
+        try:
+            url = f"{self.host}/api/tasks/{task_id}/data/meta"
+            res = self.session.get(url, timeout=10)
+            if res.status_code == 200:
+                return res.json()
+            return None
+        except Exception as e:
+            print(f"[CVAT Client] Error getting task meta: {e}")
+            return None
 
 cvat_client = CVATClient()

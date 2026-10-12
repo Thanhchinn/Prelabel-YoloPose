@@ -155,10 +155,14 @@ def run_prediction(config: Optional[PredictConfig] = None):
         results=results
     )
 
+# Prefix gắn vào tên task để nhận diện task được tạo từ Web Studio
+PLS_TASK_PREFIX = "[PLS] "
+
 @app.post("/api/cvat/sync", response_model=CVATTaskResponse)
 def sync_to_cvat(request: CVATTaskCreateRequest):
     """
     Tạo Task trên CVAT Local, tải ảnh lên và đẩy nhãn 17 điểm dự đoán vào Task.
+    Task sẽ được gắn prefix [PLS] để phân biệt với task tạo trực tiếp trên CVAT.
     """
     # 1. Xác định danh sách ảnh
     if request.image_names:
@@ -172,8 +176,9 @@ def sync_to_cvat(request: CVATTaskCreateRequest):
     if not img_paths:
         raise HTTPException(status_code=400, detail="Không có ảnh nào để đồng bộ sang CVAT.")
 
-    # 2. Tạo Task trên CVAT
-    task_id = cvat_client.create_task(request.task_name)
+    # 2. Tạo Task trên CVAT - thêm prefix [PLS] để tracking
+    cvat_task_name = f"{PLS_TASK_PREFIX}{request.task_name}"
+    task_id = cvat_client.create_task(cvat_task_name)
     if not task_id:
         # Nếu CVAT Local chưa chạy, trả về phản hồi mô phỏng kèm hướng dẫn rõ ràng
         simulated_id = 101
@@ -202,7 +207,10 @@ def sync_to_cvat(request: CVATTaskCreateRequest):
             predictions_list.append(pred_res)
             task_frame_map[p.name] = idx
 
-        cvat_anno_payload = AnnotationConverter.to_cvat_annotations_json(predictions_list, task_frame_map)
+        label_id_map = cvat_client.get_task_label_map(task_id)
+        cvat_anno_payload = AnnotationConverter.to_cvat_annotations_json(
+            predictions_list, task_frame_map, label_id_map=label_id_map
+        )
         cvat_client.upload_annotations(task_id, cvat_anno_payload)
 
     cvat_task_url = f"{CVAT_HOST}/tasks/{task_id}"
@@ -216,54 +224,172 @@ def sync_to_cvat(request: CVATTaskCreateRequest):
     )
 
 @app.get("/api/cvat/tasks")
-def list_cvat_tasks():
-    """Lấy danh sách các task hiện có từ CVAT Local."""
-    tasks = cvat_client.list_tasks()
+def list_cvat_tasks(filter: str = "studio"):
+    """
+    Lấy danh sách các task từ CVAT Local.
+    filter='studio' (mặc định): Chỉ lấy task được tạo từ Web Studio (có prefix [PLS] hoặc Pose_).
+    filter='all': Lấy tất cả tasks trên CVAT.
+    """
+    all_raw = cvat_client.list_tasks()
+    if filter == "studio":
+        raw_tasks = [
+            t for t in all_raw
+            if t.get("name", "").startswith(PLS_TASK_PREFIX) or t.get("name", "").startswith("Pose_")
+        ]
+    else:
+        raw_tasks = all_raw
+
+    # Chuẩn hóa response: bỏ prefix [PLS] trong tên hiển thị, thêm cvat_url
+    tasks = []
+    for t in raw_tasks:
+        display_name = t.get("name", "")
+        if display_name.startswith(PLS_TASK_PREFIX):
+            display_name = display_name[len(PLS_TASK_PREFIX):]
+        tasks.append({
+            "id": t.get("id"),
+            "name": display_name,
+            "status": t.get("status", "unknown"),
+            "size": t.get("size", 0),
+            "created_date": t.get("created_date", ""),
+            "updated_date": t.get("updated_date", ""),
+            "cvat_url": f"{CVAT_HOST}/tasks/{t.get('id')}",
+            "cvat_job_url": f"{CVAT_HOST}/tasks/{t.get('id')}/jobs",
+        })
     return {"tasks": tasks}
+
+@app.post("/api/cvat/tasks/{task_id}/pull")
+def pull_cvat_annotations(task_id: int):
+    """
+    Kéo nhãn mới nhất đã được chỉnh sửa từ CVAT Task về cập nhật vào Web Studio.
+    Đồng bộ lại cache trong data/outputs để hiển thị trên Canvas.
+    """
+    import json
+    meta = cvat_client.get_task_meta(task_id)
+    if not meta or not meta.get("frames"):
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy metadata frames của Task #{task_id} trên CVAT.")
+
+    annotations = cvat_client.get_task_annotations(task_id)
+    if not annotations:
+        raise HTTPException(status_code=404, detail=f"Không thể lấy annotations của Task #{task_id} từ CVAT.")
+
+    label_map = cvat_client.get_task_label_map(task_id)
+    label_id_to_name = {v: k for k, v in label_map.items()}
+
+    frames = meta.get("frames", [])
+    updated_images = []
+
+    for f_idx, frame in enumerate(frames):
+        img_name = frame.get("name", "")
+        pure_name = Path(img_name).name
+        width = frame.get("width", 1280)
+        height = frame.get("height", 720)
+
+        persons = AnnotationConverter.from_cvat_annotations(
+            annotations_json=annotations,
+            frame_number=f_idx,
+            label_id_to_name=label_id_to_name
+        )
+
+        out_file = OUTPUT_DIR / f"{Path(pure_name).stem}.json"
+        cache_data = {
+            "image_name": pure_name,
+            "image_url": f"/api/images/uploads/{pure_name}",
+            "width": width,
+            "height": height,
+            "predictions": [p.model_dump() for p in persons]
+        }
+        with open(out_file, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+
+        updated_images.append({
+            "image_name": pure_name,
+            "persons_count": len(persons),
+            "predictions": [p.model_dump() for p in persons]
+        })
+
+    return {
+        "success": True,
+        "task_id": task_id,
+        "total_frames": len(frames),
+        "updated_images": updated_images,
+        "message": f"Đã kéo và cập nhật thành công {len(updated_images)} ảnh từ CVAT Task #{task_id} về Web Studio!"
+    }
 
 @app.post("/api/metrics/evaluate", response_model=MetricsResponse)
 def evaluate_task_metrics(request: MetricsRequest):
     """
     Tính toán chỉ số PCK, NME và Human Correction Rate cho một Task.
+    So sánh: Predictions gốc (từ model YOLO) vs Ground Truth (từ CVAT đã sửa bởi annotator).
     """
-    # Lấy ground truth từ CVAT (hoặc dữ liệu so sánh mẫu)
-    task_anno = cvat_client.get_task_annotations(request.task_id)
+    import json
+    task_id = request.task_id
 
-    # Đọc predictions từ data/outputs
-    pred_files = list(OUTPUT_DIR.glob("*.json"))
-    sample_preds = []
-    for pf in pred_files:
+    # 1. Lấy ground truth từ CVAT Task
+    meta = cvat_client.get_task_meta(task_id)
+    task_anno = cvat_client.get_task_annotations(task_id)
+    label_map = cvat_client.get_task_label_map(task_id)
+    label_id_to_name = {v: k for k, v in label_map.items()} if label_map else {}
+
+    frames = meta.get("frames", []) if meta else []
+
+    # 2. Xây dựng ground truth và predictions cho từng frame
+    all_preds = []
+    all_gts = []
+
+    for f_idx, frame in enumerate(frames):
+        img_name = Path(frame.get("name", "")).name
+
+        # Đọc predictions gốc từ cache (data/outputs)
+        pred_file = OUTPUT_DIR / f"{Path(img_name).stem}.json"
+        if not pred_file.exists():
+            continue
+
         try:
-            import json
-            with open(pf, "r", encoding="utf-8") as f:
-                d = json.load(f)
-                sample_preds.extend(d.get("predictions", []))
+            with open(pred_file, "r", encoding="utf-8") as f:
+                pred_data = json.load(f)
+            local_preds = pred_data.get("predictions", [])
         except Exception:
-            pass
+            continue
 
-    # Nếu chưa có ground-truth thực từ CVAT, tạo bộ so sánh thực tế mẫu
-    # mô phỏng annotator đã tinh chỉnh nhẹ các khớp
-    sample_gt = []
-    for sp in sample_preds:
-        gt_copy = {
-            "bbox": sp["bbox"],
-            "keypoints": []
-        }
-        for k in sp["keypoints"]:
-            # Giả lập sửa nhẹ 1-2px cho khớp chắc chắn, 4-6px cho khớp khó như cổ tay/cổ chân
-            err = 5.5 if "wrist" in k["name"] or "ankle" in k["name"] else 1.5
-            gt_copy["keypoints"].append({
-                "name": k["name"],
-                "x": k["x"] + err,
-                "y": k["y"] + err,
-                "visible": k["visible"]
-            })
-        sample_gt.append(gt_copy)
+        # Lấy ground truth từ CVAT annotations cho frame này
+        if task_anno and label_id_to_name:
+            gt_persons = AnnotationConverter.from_cvat_annotations(
+                annotations_json=task_anno,
+                frame_number=f_idx,
+                label_id_to_name=label_id_to_name
+            )
+            gt_list = [p.model_dump() for p in gt_persons]
+        else:
+            gt_list = []
+
+        # Ghép cặp predictions với ground truth (1:1 theo thứ tự)
+        if gt_list:
+            pair_count = min(len(local_preds), len(gt_list))
+            for i in range(pair_count):
+                all_preds.append(local_preds[i])
+                all_gts.append(gt_list[i])
+        else:
+            # Nếu CVAT chưa có GT, mô phỏng nhẹ cho demo
+            for sp in local_preds:
+                all_preds.append(sp)
+                gt_copy = {
+                    "bbox": sp["bbox"],
+                    "keypoints": []
+                }
+                for k in sp["keypoints"]:
+                    err = 5.5 if "wrist" in k["name"] or "ankle" in k["name"] else 1.5
+                    gt_copy["keypoints"].append({
+                        "name": k["name"],
+                        "x": k["x"] + err,
+                        "y": k["y"] + err,
+                        "visible": k["visible"]
+                    })
+                all_gts.append(gt_copy)
 
     metrics_res = MetricsCalculator.calculate_metrics(
-        predictions=sample_preds,
-        ground_truths=sample_gt,
-        task_id=request.task_id
+        predictions=all_preds,
+        ground_truths=all_gts,
+        task_id=task_id
     )
 
     return metrics_res

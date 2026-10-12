@@ -58,9 +58,20 @@ export const api = {
     return res.json();
   },
 
-  async listCVATTasks() {
-    const res = await fetch(`${API_BASE}/cvat/tasks`);
+  async listCVATTasks(filter = "studio") {
+    const res = await fetch(`${API_BASE}/cvat/tasks?filter=${filter}`);
     if (!res.ok) throw new Error("Failed to fetch CVAT tasks");
+    return res.json();
+  },
+
+  async pullFromCVAT(taskId) {
+    const res = await fetch(`${API_BASE}/cvat/tasks/${taskId}/pull`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Không thể kéo nhãn từ CVAT Task");
+    }
     return res.json();
   },
 

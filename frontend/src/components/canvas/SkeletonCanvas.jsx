@@ -1,7 +1,17 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import { ZoomIn, ZoomOut, Maximize2, Tag, Move, RefreshCw } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Tag, Move, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 
-export default function SkeletonCanvas({ imageSrc, predictions = [], skeletonEdges = [] }) {
+export default function SkeletonCanvas({
+  imageSrc,
+  predictions = [],
+  skeletonEdges = [],
+  onPrevImage,
+  onNextImage,
+  hasPrev = false,
+  hasNext = false,
+  imageIndex = 0,
+  totalImages = 0
+}) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const imgRef = useRef(null);
@@ -76,6 +86,20 @@ export default function SkeletonCanvas({ imageSrc, predictions = [], skeletonEdg
     return () => resizeObserver.disconnect();
   }, [updateDisplaySize]);
 
+  // Lắng nghe phím mũi tên trái/phải để chuyển ảnh tiện lợi
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target?.tagName)) return;
+      if (e.key === "ArrowLeft" && hasPrev && onPrevImage) {
+        onPrevImage();
+      } else if (e.key === "ArrowRight" && hasNext && onNextImage) {
+        onNextImage();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [hasPrev, hasNext, onPrevImage, onNextImage]);
+
   // Vẽ hình ảnh và các khớp lên Canvas
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -132,16 +156,27 @@ export default function SkeletonCanvas({ imageSrc, predictions = [], skeletonEdg
             ctx.moveTo(ptU.x, ptU.y);
             ctx.lineTo(ptV.x, ptV.y);
 
+            // Chuẩn CVAT: nếu 1 trong 2 khớp bị che khuất (visible === 1), vẽ đường nét đứt (dashed line)
+            const isOccluded = ptU.visible === 1 || ptV.visible === 1;
+            if (isOccluded) {
+              const dashLen = Math.max(6, Math.round(canvas.width / 160));
+              const gapLen = Math.max(4, Math.round(canvas.width / 240));
+              ctx.setLineDash([dashLen, gapLen]);
+            } else {
+              ctx.setLineDash([]);
+            }
+
             const isLeft = ptU.name?.includes("left") || ptV.name?.includes("left");
             const isRight = ptU.name?.includes("right") || ptV.name?.includes("right");
             if (isLeft) {
-              ctx.strokeStyle = "rgba(16, 185, 129, 0.9)"; // Emerald
+              ctx.strokeStyle = isOccluded ? "rgba(16, 185, 129, 0.65)" : "rgba(16, 185, 129, 0.95)"; // Emerald
             } else if (isRight) {
-              ctx.strokeStyle = "rgba(239, 68, 68, 0.9)"; // Red
+              ctx.strokeStyle = isOccluded ? "rgba(239, 68, 68, 0.65)" : "rgba(239, 68, 68, 0.95)"; // Red
             } else {
-              ctx.strokeStyle = "rgba(245, 158, 11, 0.95)"; // Amber
+              ctx.strokeStyle = isOccluded ? "rgba(245, 158, 11, 0.7)" : "rgba(245, 158, 11, 0.95)"; // Amber
             }
             ctx.stroke();
+            ctx.setLineDash([]); // Reset nét vẽ
           }
         });
       }
@@ -150,28 +185,58 @@ export default function SkeletonCanvas({ imageSrc, predictions = [], skeletonEdg
       if (showPoints) {
         const radius = Math.max(5, Math.round(canvas.width / 180));
         kpts.forEach((k) => {
-          if (k.visible === 0) return;
-
-          ctx.beginPath();
-          ctx.arc(k.x, k.y, radius, 0, 2 * Math.PI);
+          if (k.visible === 0) return; // Ẩn điểm outside/invisible
 
           const isLeft = k.name?.includes("left");
           const isRight = k.name?.includes("right");
-          ctx.fillStyle = isLeft ? "#10B981" : isRight ? "#EF4444" : "#FBBF24";
-          ctx.fill();
-          ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = Math.max(2, Math.round(radius / 3));
-          ctx.stroke();
+          const baseColor = isLeft ? "#10B981" : isRight ? "#EF4444" : "#FBBF24";
+          const isOccluded = k.visible === 1;
+
+          if (isOccluded) {
+            // Điểm BỊ CHE KHUẤT (OCCLUDED): Vẽ viền nét đứt và vòng hào quang cảnh báo
+            ctx.save();
+            // 1. Vòng halo ngoài nét đứt màu cam vàng
+            ctx.beginPath();
+            ctx.arc(k.x, k.y, radius + Math.max(3, Math.round(radius * 0.5)), 0, 2 * Math.PI);
+            ctx.setLineDash([Math.max(3, Math.round(radius * 0.6)), Math.max(2, Math.round(radius * 0.4))]);
+            ctx.strokeStyle = "#F59E0B";
+            ctx.lineWidth = Math.max(2, Math.round(radius / 3));
+            ctx.stroke();
+
+            // 2. Điểm khớp trung tâm bán trong suốt + viền nét đứt trắng
+            ctx.beginPath();
+            ctx.arc(k.x, k.y, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = isLeft ? "rgba(16, 185, 129, 0.45)" : isRight ? "rgba(239, 68, 68, 0.45)" : "rgba(251, 191, 36, 0.45)";
+            ctx.fill();
+            ctx.strokeStyle = "#ffffff";
+            ctx.setLineDash([Math.max(2, Math.round(radius * 0.5)), Math.max(2, Math.round(radius * 0.5))]);
+            ctx.lineWidth = Math.max(2, Math.round(radius / 3));
+            ctx.stroke();
+            ctx.restore();
+          } else {
+            // Điểm RÕ RÀNG (VISIBLE): Nét liền sắc nét
+            ctx.save();
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.arc(k.x, k.y, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = baseColor;
+            ctx.fill();
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = Math.max(2, Math.round(radius / 3));
+            ctx.stroke();
+            ctx.restore();
+          }
 
           // Nhãn tên khớp
           if (showLabels) {
             const labelSize = Math.max(11, Math.round(canvas.width / 80));
             ctx.font = `bold ${labelSize}px sans-serif`;
-            ctx.fillStyle = "#ffffff";
+            const labelText = isOccluded ? `${k.name} [Occluded]` : k.name;
+            ctx.fillStyle = isOccluded ? "#FDE68A" : "#ffffff";
             ctx.strokeStyle = "#000000";
             ctx.lineWidth = 3;
-            ctx.strokeText(k.name, k.x + radius + 4, k.y + 4);
-            ctx.fillText(k.name, k.x + radius + 4, k.y + 4);
+            ctx.strokeText(labelText, k.x + radius + 6, k.y + 4);
+            ctx.fillText(labelText, k.x + radius + 6, k.y + 4);
           }
         });
       }
@@ -241,6 +306,35 @@ export default function SkeletonCanvas({ imageSrc, predictions = [], skeletonEdg
             <span>Labels</span>
           </button>
         </div>
+
+        {/* Next / Pre Navigation Controls */}
+        {totalImages > 0 && (
+          <div className="flex items-center space-x-1.5 bg-slate-950/80 border border-slate-800 rounded-xl px-2 py-1 shadow-inner">
+            <button
+              onClick={onPrevImage}
+              disabled={!hasPrev}
+              className="px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center space-x-1 transition-all bg-slate-800 hover:bg-cyan-600 hover:text-white text-slate-200 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+              title="Xem ảnh trước (Pre / Phím ←)"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Pre</span>
+            </button>
+
+            <span className="text-xs font-mono text-cyan-300 font-bold px-2">
+              {imageIndex + 1} / {totalImages}
+            </span>
+
+            <button
+              onClick={onNextImage}
+              disabled={!hasNext}
+              className="px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center space-x-1 transition-all bg-slate-800 hover:bg-cyan-600 hover:text-white text-slate-200 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+              title="Xem ảnh sau (Next / Phím →)"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* View Controls */}
         <div className="flex items-center space-x-2">
@@ -321,7 +415,7 @@ export default function SkeletonCanvas({ imageSrc, predictions = [], skeletonEdg
 
       {/* Footer Legend */}
       <div className="h-9 bg-slate-900 border-t border-slate-800 px-4 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-3.5 flex-wrap">
           <span className="flex items-center space-x-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
             <span>Chi trái (Left)</span>
@@ -333,6 +427,15 @@ export default function SkeletonCanvas({ imageSrc, predictions = [], skeletonEdg
           <span className="flex items-center space-x-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
             <span>Trục thân (Central)</span>
+          </span>
+          <span className="text-slate-700 font-bold">|</span>
+          <span className="flex items-center space-x-1.5">
+            <span className="w-3.5 h-0.5 bg-emerald-400 rounded-full inline-block" />
+            <span className="text-slate-300">Rõ ràng (Visible)</span>
+          </span>
+          <span className="flex items-center space-x-1.5">
+            <span className="w-4 border-t-2 border-dashed border-amber-400 inline-block" />
+            <span className="text-amber-300 font-medium">Bị che (Occluded)</span>
           </span>
         </div>
         <div className="flex items-center space-x-3 text-slate-400">

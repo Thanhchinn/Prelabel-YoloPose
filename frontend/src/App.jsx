@@ -11,6 +11,9 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [targetTaskId, setTargetTaskId] = useState(101);
 
+  // Task ID to view in Studio (when clicking "Xem Web" from CVAT Hub)
+  const [viewTaskId, setViewTaskId] = useState(null);
+
   useEffect(() => {
     fetchHealth();
     // Tự động kiểm tra sức khỏe mỗi 20 giây
@@ -39,6 +42,12 @@ export default function App() {
     setActiveTab("analytics");
   };
 
+  const handleViewTask = (taskId) => {
+    // Chuyển sang Studio view và truyền task ID để pull + xem
+    setViewTaskId(taskId);
+    setActiveTab("studio");
+  };
+
   return (
     <MainLayout
       activeTab={activeTab}
@@ -48,10 +57,17 @@ export default function App() {
       isRefreshing={isRefreshing}
     >
       {activeTab === "studio" && (
-        <StudioView onNavigateToCVAT={() => setActiveTab("cvat")} />
+        <StudioView
+          onNavigateToCVAT={() => setActiveTab("cvat")}
+          viewTaskId={viewTaskId}
+          onClearViewTask={() => setViewTaskId(null)}
+        />
       )}
       {activeTab === "cvat" && (
-        <CVATSyncView onEvaluateTask={handleEvaluateTask} />
+        <CVATSyncView
+          onEvaluateTask={handleEvaluateTask}
+          onViewTask={handleViewTask}
+        />
       )}
       {activeTab === "analytics" && (
         <AnalyticsView initialTaskId={targetTaskId} />
