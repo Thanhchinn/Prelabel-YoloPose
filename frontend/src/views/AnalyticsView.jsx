@@ -2,8 +2,13 @@ import React, { useState, useEffect } from "react";
 import { BarChart3, TrendingUp, TrendingDown, CheckCircle, Activity, Sparkles, RefreshCw, Loader2, AlertCircle } from "lucide-react";
 import { api } from "../services/api";
 
-export default function AnalyticsView({ initialTaskId = 1 }) {
+export default function AnalyticsView({
+  initialTaskId = 1,
+  selectedModelType = "yolo",
+  availableModels = [],
+}) {
   const [taskId, setTaskId] = useState(initialTaskId);
+  const [modelType, setModelType] = useState(selectedModelType);
   const [loading, setLoading] = useState(false);
   const [metrics, setMetrics] = useState(null);
   const [error, setError] = useState("");
@@ -20,8 +25,14 @@ export default function AnalyticsView({ initialTaskId = 1 }) {
   }, [initialTaskId]);
 
   useEffect(() => {
-    if (taskId) loadMetrics(taskId);
-  }, [taskId]);
+    if (selectedModelType) {
+      setModelType(selectedModelType);
+    }
+  }, [selectedModelType]);
+
+  useEffect(() => {
+    if (taskId) loadMetrics(taskId, modelType);
+  }, [taskId, modelType]);
 
   const loadCVATTasks = async () => {
     try {
@@ -34,11 +45,11 @@ export default function AnalyticsView({ initialTaskId = 1 }) {
     }
   };
 
-  const loadMetrics = async (id) => {
+  const loadMetrics = async (id, mType = modelType) => {
     setLoading(true);
     setError("");
     try {
-      const data = await api.evaluateMetrics(id);
+      const data = await api.evaluateMetrics(id, mType);
       setMetrics(data);
     } catch (err) {
       console.error(err);
@@ -67,45 +78,68 @@ export default function AnalyticsView({ initialTaskId = 1 }) {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
             <BarChart3 className="w-5 h-5 text-cyan-400" />
             <span>Báo cáo Đo lường Chất lượng & Công sức Gán nhãn (QA)</span>
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            So sánh dự đoán YOLO vs. nhãn đã sửa trên CVAT → tính PCK, NME, Human Correction Rate.
+            So sánh dự đoán của <span className="text-cyan-300 font-semibold">{metrics?.model_name || "Mô hình AI"}</span> vs. nhãn Ground Truth trên CVAT → tính PCK, NME, Human Correction Rate.
           </p>
         </div>
 
-        {/* Task selector */}
-        <div className="flex items-center space-x-2">
-          <span className="text-xs text-slate-400 font-medium">Chọn Task:</span>
-          {cvatTasks.length > 0 ? (
+        {/* Task & Model Selectors */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center space-x-1.5">
+            <span className="text-xs text-slate-400 font-medium">Task:</span>
+            {cvatTasks.length > 0 ? (
+              <select
+                value={taskId}
+                onChange={(e) => setTaskId(parseInt(e.target.value))}
+                className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 outline-none cursor-pointer focus:border-cyan-500"
+              >
+                {cvatTasks.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    #{t.id} — {t.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="number"
+                value={taskId}
+                onChange={(e) => setTaskId(parseInt(e.target.value) || 1)}
+                className="w-20 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none"
+                placeholder="Task ID"
+              />
+            )}
+          </div>
+
+          <div className="flex items-center space-x-1.5">
+            <span className="text-xs text-slate-400 font-medium">Model:</span>
             <select
-              value={taskId}
-              onChange={(e) => setTaskId(parseInt(e.target.value))}
+              value={modelType}
+              onChange={(e) => setModelType(e.target.value)}
               className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 outline-none cursor-pointer focus:border-cyan-500"
             >
-              {cvatTasks.map((t) => (
-                <option key={t.id} value={t.id}>
-                  #{t.id} — {t.name}
+              {(availableModels.length > 0 ? availableModels : [
+                { id: "yolo", name: "YOLO 26 Pose" },
+                { id: "rtmpose", name: "RTMPose-m (OpenMMLab)" },
+                { id: "vitpose", name: "ViTPose-Base (Transformer)" },
+              ]).map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
                 </option>
               ))}
             </select>
-          ) : (
-            <input
-              type="number"
-              value={taskId}
-              onChange={(e) => setTaskId(parseInt(e.target.value) || 1)}
-              className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 outline-none"
-              placeholder="Task ID"
-            />
-          )}
+          </div>
+
           <button
-            onClick={() => loadMetrics(taskId)}
+            onClick={() => loadMetrics(taskId, modelType)}
             disabled={loading}
             className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer transition-colors"
+            title="Làm mới đối chiếu"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-cyan-400" : ""}`} />
           </button>

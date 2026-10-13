@@ -2,13 +2,24 @@ import React, { useState, useEffect } from "react";
 import { Layers, ExternalLink, RefreshCw, CheckCircle2, Download, BarChart2, Loader2, Eye, Clock, ImageIcon } from "lucide-react";
 import { api } from "../services/api";
 
-export default function CVATSyncView({ onEvaluateTask, onViewTask }) {
+export default function CVATSyncView({
+  onEvaluateTask,
+  onViewTask,
+  selectedModelType = "yolo",
+  onSelectModelType,
+  availableModels = [],
+}) {
   const [taskName, setTaskName] = useState("");
   const [includePrelabels, setIncludePrelabels] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
   const [exportLoading, setExportLoading] = useState(false);
   const [exportMessage, setExportMessage] = useState("");
+
+  const activeModelObj = availableModels.find((m) => m.id === selectedModelType) || {
+    name: "YOLO 26 Pose",
+    badge: "YOLO 26",
+  };
 
   // Task list state - giờ tải từ CVAT thật
   const [tasks, setTasks] = useState([]);
@@ -76,6 +87,7 @@ export default function CVATSyncView({ onEvaluateTask, onViewTask }) {
       const res = await api.syncToCVAT({
         task_name: taskName,
         include_prelabels: includePrelabels,
+        model_type: selectedModelType,
       });
       setSyncResult(res);
 
@@ -124,7 +136,7 @@ export default function CVATSyncView({ onEvaluateTask, onViewTask }) {
           <span>Trung tâm đồng bộ CVAT Local & Active Learning</span>
         </h2>
         <p className="text-xs text-slate-400 mt-1">
-          Tạo task trên CVAT với skeleton 17 điểm COCO, nạp nhãn pre-label từ YOLO 26 và xuất dataset để huấn luyện lại.
+          Tạo task trên CVAT với skeleton 17 điểm COCO, nạp nhãn pre-label từ AI Engine đa mô hình và xuất dataset để huấn luyện lại.
           <span className="text-cyan-400 ml-1 font-medium">Chỉ hiển thị task được tạo từ Web Studio.</span>
         </p>
       </div>
@@ -132,7 +144,7 @@ export default function CVATSyncView({ onEvaluateTask, onViewTask }) {
       {/* Sync Creation Form Card */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
         <form onSubmit={handleCreateTask} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                 Tên Task trên CVAT:
@@ -150,17 +162,50 @@ export default function CVATSyncView({ onEvaluateTask, onViewTask }) {
               </p>
             </div>
 
-            <div className="flex items-center pt-6 space-x-3">
-              <input
-                type="checkbox"
-                id="prelabels"
-                checked={includePrelabels}
-                onChange={(e) => setIncludePrelabels(e.target.checked)}
-                className="w-4 h-4 accent-cyan-500 rounded cursor-pointer"
-              />
-              <label htmlFor="prelabels" className="text-xs font-medium text-slate-300 cursor-pointer select-none">
-                Tự động nạp khung xương 17 điểm của YOLO 26 vào ảnh
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
+                <span>Mô hình AI Pre-label:</span>
+                <span className="text-[10px] text-cyan-400 font-mono font-medium">Đã chọn</span>
               </label>
+              {availableModels.length > 0 ? (
+                <select
+                  value={selectedModelType}
+                  onChange={(e) => onSelectModelType && onSelectModelType(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-3 py-2.5 text-xs text-slate-100 outline-none transition-colors cursor-pointer"
+                >
+                  {availableModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.badge})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={activeModelObj.name}
+                  disabled
+                  className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-300"
+                />
+              )}
+              <p className="text-[10px] text-slate-500 mt-1">
+                Khung xương của model này sẽ được chuyển thành nhãn trên CVAT.
+              </p>
+            </div>
+
+            <div className="flex flex-col justify-center pt-2 md:pt-0">
+              <label className="text-xs font-semibold text-slate-300 mb-2">Tùy chọn nạp nhãn:</label>
+              <div className="flex items-center space-x-2.5 p-2 bg-slate-950/60 border border-slate-800 rounded-xl">
+                <input
+                  type="checkbox"
+                  id="prelabels"
+                  checked={includePrelabels}
+                  onChange={(e) => setIncludePrelabels(e.target.checked)}
+                  className="w-4 h-4 accent-cyan-500 rounded cursor-pointer"
+                />
+                <label htmlFor="prelabels" className="text-xs font-medium text-slate-300 cursor-pointer select-none truncate">
+                  Nạp sẵn 17 điểm của <span className="text-cyan-400 font-semibold">{activeModelObj.name}</span>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -168,17 +213,17 @@ export default function CVATSyncView({ onEvaluateTask, onViewTask }) {
             <button
               type="submit"
               disabled={isSyncing}
-              className="py-2.5 px-6 rounded-xl font-medium text-xs flex items-center space-x-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20 transition-all disabled:opacity-50 cursor-pointer"
+              className="py-2.5 px-6 rounded-xl font-medium text-xs flex items-center space-x-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20 transition-all disabled:opacity-50 cursor-pointer active:scale-95"
             >
               {isSyncing ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Đang kết nối CVAT & nạp dữ liệu...</span>
+                  <span>Đang kết nối CVAT & nạp nhãn {activeModelObj.name}...</span>
                 </>
               ) : (
                 <>
                   <Layers className="w-4 h-4" />
-                  <span>Đồng bộ sang CVAT Local</span>
+                  <span>Đồng bộ sang CVAT Local ({activeModelObj.badge || activeModelObj.name})</span>
                 </>
               )}
             </button>

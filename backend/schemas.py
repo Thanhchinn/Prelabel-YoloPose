@@ -21,21 +21,35 @@ class ImagePredictionResult(BaseModel):
     width: int
     height: int
     person_count: int
+    model_name: Optional[str] = "YOLO 26 Pose"
+    model_type: Optional[str] = "yolo"
     predictions: List[PersonPose]
 
 class BatchPredictResponse(BaseModel):
     total_images: int
+    model_type: Optional[str] = "yolo"
     results: List[ImagePredictionResult]
 
 class PredictConfig(BaseModel):
     conf_threshold: Optional[float] = 0.5
     kpt_conf_threshold: Optional[float] = 0.5
+    model_type: Optional[str] = "yolo"  # "yolo" | "rtmpose" | "vitpose"
     image_names: Optional[List[str]] = None
+
+class ModelInfo(BaseModel):
+    id: str
+    name: str
+    family: str
+    speed: str
+    ap_score: str
+    badge: str
+    description: str
 
 class CVATTaskCreateRequest(BaseModel):
     task_name: str
     image_names: Optional[List[str]] = None
     include_prelabels: bool = True
+    model_type: Optional[str] = "yolo"
 
 class CVATTaskResponse(BaseModel):
     task_id: int
@@ -53,9 +67,12 @@ class KeypointMetricDetail(BaseModel):
 
 class MetricsRequest(BaseModel):
     task_id: int
+    model_type: Optional[str] = "yolo"
 
 class MetricsResponse(BaseModel):
     task_id: int
+    model_name: Optional[str] = "YOLO 26 Pose"
+    model_type: Optional[str] = "yolo"
     total_skeletons: int
     pck_overall: float
     nme_overall: float

@@ -13,6 +13,12 @@ export const api = {
     return res.json();
   },
 
+  async getModels() {
+    const res = await fetch(`${API_BASE}/models`);
+    if (!res.ok) throw new Error("Failed to fetch available models");
+    return res.json();
+  },
+
   async uploadImages(files) {
     const formData = new FormData();
     for (let i = 0; i < files.length; i++) {
@@ -64,7 +70,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error("CVAT sync failed");
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "CVAT sync failed");
+    }
     return res.json();
   },
 
@@ -85,13 +94,16 @@ export const api = {
     return res.json();
   },
 
-  async evaluateMetrics(taskId = 1) {
+  async evaluateMetrics(taskId = 1, modelType = "yolo") {
     const res = await fetch(`${API_BASE}/metrics/evaluate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ task_id: taskId }),
+      body: JSON.stringify({ task_id: taskId, model_type: modelType }),
     });
-    if (!res.ok) throw new Error("Metrics evaluation failed");
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Metrics evaluation failed");
+    }
     return res.json();
   },
 

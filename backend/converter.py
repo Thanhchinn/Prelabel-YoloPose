@@ -168,6 +168,8 @@ class AnnotationConverter:
 
             lines.append(" ".join(row))
 
+        return "\n".join(lines)
+
     @staticmethod
     def from_cvat_annotations(
         annotations_json: Dict[str, Any],

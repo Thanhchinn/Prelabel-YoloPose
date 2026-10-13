@@ -8,3 +8,8 @@ opencv-python-headless>=4.9.0.80
 pillow>=10.2.0
 requests>=2.31.0
 ultralytics>=8.3.0
+# Multi-Model Pose Estimation: RTMPose (OpenMMLab) & ViTPose (Transformer)
+rtmlib>=0.0.16
+onnxruntime>=1.18.0
+transformers>=4.40.0
+torch>=2.0.0

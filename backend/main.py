@@ -20,6 +20,7 @@ from config import (
 )
 from schemas import (
     PredictConfig, BatchPredictResponse, ImagePredictionResult,
+    ModelInfo,
     CVATTaskCreateRequest, CVATTaskResponse,
     MetricsRequest, MetricsResponse,
     RetrainExportRequest, RetrainExportResponse,
@@ -78,6 +79,11 @@ def get_system_config():
         "default_kpt_conf": KPT_CONF_THRESHOLD,
         "cvat_host": CVAT_HOST
     }
+
+@app.get("/api/models", response_model=List[ModelInfo])
+def get_available_models():
+    """Trả về danh sách các kiến trúc mô hình hỗ trợ (YOLO 26, RTMPose, ViTPose)."""
+    return model_service.get_available_models()
 
 @app.post("/api/upload")
 async def upload_images(files: List[UploadFile] = File(...)):
@@ -238,9 +244,10 @@ def get_image_prediction(image_name: str):
 
 @app.post("/api/predict", response_model=BatchPredictResponse)
 def run_prediction(config: Optional[PredictConfig] = None):
-    """Chạy mô hình YOLO 26 Pose trên danh sách ảnh."""
+    """Chạy mô hình suy luận Pose (YOLO 26, RTMPose, hoặc ViTPose) trên danh sách ảnh."""
     conf = config.conf_threshold if config and config.conf_threshold is not None else CONF_THRESHOLD
     kpt_conf = config.kpt_conf_threshold if config and config.kpt_conf_threshold is not None else KPT_CONF_THRESHOLD
+    model_type = config.model_type if config and config.model_type else "yolo"
 
     # Chọn ảnh để predict
     if config and config.image_names:
@@ -253,11 +260,14 @@ def run_prediction(config: Optional[PredictConfig] = None):
 
     results: List[ImagePredictionResult] = []
     for img_path in target_images:
-        res = model_service.predict_single_image(img_path, conf_thresh=conf, kpt_conf_thresh=kpt_conf)
+        res = model_service.predict_single_image(
+            img_path, conf_thresh=conf, kpt_conf_thresh=kpt_conf, model_type=model_type
+        )
         results.append(res)
 
     return BatchPredictResponse(
         total_images=len(results),
+        model_type=model_type,
         results=results
     )
 
@@ -303,13 +313,33 @@ def sync_to_cvat(request: CVATTaskCreateRequest):
     if not upload_ok:
         raise HTTPException(status_code=500, detail="Không thể tải ảnh lên Task CVAT.")
 
-    # 4. Nếu có yêu cầu pre-label, chuyển đổi và đẩy nhãn lên CVAT
+    # 4. Nếu có yêu cầu pre-label, chuyển đổi và đẩy nhãn lên CVAT theo mô hình được chọn
+    target_model_type = (request.model_type or "yolo").lower().strip()
+    available_models = model_service.get_available_models()
+    model_meta = next((m for m in available_models if m["id"] == target_model_type), available_models[0])
+    model_display_name = model_meta.get("name", "AI Pose")
+
     if request.include_prelabels:
-        # Lấy kết quả predictions
+        import json
         predictions_list = []
         task_frame_map = {}
         for idx, p in enumerate(img_paths):
-            pred_res = model_service.predict_single_image(p)
+            pred_res = None
+            cached_json = OUTPUT_DIR / f"{p.stem}.json"
+            if cached_json.exists():
+                try:
+                    with open(cached_json, "r", encoding="utf-8") as f:
+                        cache_data = json.load(f)
+                    # Nếu file cache đã lưu đúng kết quả suy luận của model_type này
+                    if cache_data.get("model_type") == target_model_type and cache_data.get("predictions") is not None:
+                        pred_res = ImagePredictionResult(**cache_data)
+                except Exception:
+                    pred_res = None
+
+            # Nếu chưa có cache hoặc cache thuộc model khác -> thực thi suy luận trực tiếp với model được chọn
+            if pred_res is None:
+                pred_res = model_service.predict_single_image(p, model_type=target_model_type)
+
             predictions_list.append(pred_res)
             task_frame_map[p.name] = idx
 
@@ -326,7 +356,7 @@ def sync_to_cvat(request: CVATTaskCreateRequest):
         cvat_url=cvat_task_url,
         image_count=len(img_paths),
         status="success",
-        message=f"Đã tạo thành công Task '{request.task_name}' trên CVAT Local với {len(img_paths)} ảnh kèm bộ xương 17 điểm."
+        message=f"Đã tạo thành công Task '{request.task_name}' trên CVAT Local với {len(img_paths)} ảnh kèm bộ xương 17 điểm ({model_display_name})."
     )
 
 @app.get("/api/cvat/tasks")
@@ -423,14 +453,19 @@ def pull_cvat_annotations(task_id: int):
         )
 
         out_file = OUTPUT_DIR / f"{Path(pure_name).stem}.json"
+        gt_file = OUTPUT_DIR / f"{Path(pure_name).stem}_cvat_gt.json"
         cache_data = {
             "image_name": pure_name,
             "image_url": f"/api/images/uploads/{pure_name}",
             "width": width,
             "height": height,
+            "model_name": "CVAT Annotations",
+            "model_type": "cvat",
             "predictions": [p.model_dump() for p in persons]
         }
         with open(out_file, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+        with open(gt_file, "w", encoding="utf-8") as f:
             json.dump(cache_data, f, ensure_ascii=False, indent=2)
 
         updated_images.append({
@@ -462,10 +497,14 @@ def pull_cvat_annotations(task_id: int):
 def evaluate_task_metrics(request: MetricsRequest):
     """
     Tính toán chỉ số PCK, NME và Human Correction Rate cho một Task.
-    So sánh: Predictions gốc (từ model YOLO) vs Ground Truth (từ CVAT đã sửa bởi annotator).
+    So sánh: Predictions của mô hình (YOLO 26, RTMPose, hoặc ViTPose) vs Ground Truth (từ CVAT đã sửa bởi annotator).
     """
     import json
     task_id = request.task_id
+    target_model_type = (request.model_type or "yolo").lower().strip()
+    available_models = model_service.get_available_models()
+    model_meta = next((m for m in available_models if m["id"] == target_model_type), available_models[0])
+    model_display_name = model_meta.get("name", "AI Pose")
 
     # 1. Lấy ground truth từ CVAT Task
     meta = cvat_client.get_task_meta(task_id)
@@ -481,18 +520,45 @@ def evaluate_task_metrics(request: MetricsRequest):
 
     for f_idx, frame in enumerate(frames):
         img_name = Path(frame.get("name", "")).name
+        target_img = UPLOAD_DIR / img_name
 
-        # Đọc predictions gốc từ cache (data/outputs)
-        pred_file = OUTPUT_DIR / f"{Path(img_name).stem}.json"
-        if not pred_file.exists():
-            continue
+        # Đảm bảo ảnh tồn tại cục bộ để mô hình có thể suy luận trực tiếp
+        if not target_img.exists():
+            if ARCHIVE_DIR.exists():
+                for arch_match in ARCHIVE_DIR.rglob(img_name):
+                    if arch_match.is_file():
+                        try:
+                            shutil.copy2(str(arch_match), str(target_img))
+                        except Exception:
+                            pass
+                        break
+            if not target_img.exists():
+                frame_bytes = cvat_client.download_task_frame(task_id, f_idx)
+                if frame_bytes:
+                    try:
+                        with open(target_img, "wb") as f_img:
+                            f_img.write(frame_bytes)
+                    except Exception:
+                        pass
 
-        try:
-            with open(pred_file, "r", encoding="utf-8") as f:
-                pred_data = json.load(f)
-            local_preds = pred_data.get("predictions", [])
-        except Exception:
-            continue
+        # Thực thi suy luận thật của mô hình được chọn trên ảnh
+        local_preds = []
+        if target_img.exists():
+            try:
+                pred_res = model_service.predict_single_image(target_img, model_type=target_model_type)
+                local_preds = [p.model_dump() for p in pred_res.predictions]
+            except Exception as e:
+                print(f"[Metrics] Predict error on {img_name}: {e}")
+        else:
+            # Fallback nếu không có file ảnh: đọc cache
+            pred_file = OUTPUT_DIR / f"{Path(img_name).stem}.json"
+            if pred_file.exists():
+                try:
+                    with open(pred_file, "r", encoding="utf-8") as f:
+                        pred_data = json.load(f)
+                    local_preds = pred_data.get("predictions", [])
+                except Exception:
+                    local_preds = []
 
         # Lấy ground truth từ CVAT annotations cho frame này
         if task_anno and label_id_to_name:
@@ -505,14 +571,14 @@ def evaluate_task_metrics(request: MetricsRequest):
         else:
             gt_list = []
 
-        # Ghép cặp predictions với ground truth (1:1 theo thứ tự)
-        if gt_list:
-            pair_count = min(len(local_preds), len(gt_list))
-            for i in range(pair_count):
-                all_preds.append(local_preds[i])
-                all_gts.append(gt_list[i])
-        else:
-            # Nếu CVAT chưa có GT, mô phỏng nhẹ cho demo
+        # Ghép cặp thông minh (IoU/distance matching) giữa predictions và ground truth
+        if gt_list and local_preds:
+            matched_pairs = MetricsCalculator.match_frame_persons(local_preds, gt_list)
+            for p, g in matched_pairs:
+                all_preds.append(p)
+                all_gts.append(g)
+        elif not gt_list and local_preds:
+            # Nếu CVAT chưa có annotation, mô phỏng nhẹ sai số để demo trên UI
             for sp in local_preds:
                 all_preds.append(sp)
                 gt_copy = {
@@ -520,7 +586,7 @@ def evaluate_task_metrics(request: MetricsRequest):
                     "keypoints": []
                 }
                 for k in sp["keypoints"]:
-                    err = 5.5 if "wrist" in k["name"] or "ankle" in k["name"] else 1.5
+                    err = 4.5 if "wrist" in k["name"] or "ankle" in k["name"] else 1.2
                     gt_copy["keypoints"].append({
                         "name": k["name"],
                         "x": k["x"] + err,
@@ -532,7 +598,9 @@ def evaluate_task_metrics(request: MetricsRequest):
     metrics_res = MetricsCalculator.calculate_metrics(
         predictions=all_preds,
         ground_truths=all_gts,
-        task_id=task_id
+        task_id=task_id,
+        model_name=model_display_name,
+        model_type=target_model_type
     )
 
     return metrics_res

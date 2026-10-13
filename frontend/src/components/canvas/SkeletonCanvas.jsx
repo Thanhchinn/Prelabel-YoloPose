@@ -1,10 +1,17 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import { ZoomIn, ZoomOut, Maximize2, Tag, Move, RefreshCw, ChevronLeft, ChevronRight, Image as ImageIcon } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Tag, ChevronLeft, ChevronRight, Image as ImageIcon, Move } from "lucide-react";
+
+const formatModelName = (name) => {
+  if (!name) return "Chưa có nhãn";
+  const str = typeof name === "string" ? name : String(name?.name || name || "");
+  return str.replace(/\s*\(.*?\)/g, "").trim();
+};
 
 export default function SkeletonCanvas({
   imageSrc,
   predictions = [],
   skeletonEdges = [],
+  currentModelName = "",
   onPrevImage,
   onNextImage,
   hasPrev = false,
@@ -18,6 +25,7 @@ export default function SkeletonCanvas({
 
   // Kích thước hiển thị tự căn chỉnh vừa vặn container
   const [displaySize, setDisplaySize] = useState({ width: 0, height: 0 });
+  const [naturalResolution, setNaturalResolution] = useState("");
   const [zoomLevel, setZoomLevel] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -25,6 +33,7 @@ export default function SkeletonCanvas({
 
   const [showBoxes, setShowBoxes] = useState(true);
   const [showSkeleton, setShowSkeleton] = useState(true);
+
   const [showPoints, setShowPoints] = useState(true);
   const [showLabels, setShowLabels] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
@@ -66,12 +75,14 @@ export default function SkeletonCanvas({
     img.src = imageSrc;
     img.onload = () => {
       imgRef.current = img;
+      setNaturalResolution(`${img.naturalWidth}x${img.naturalHeight}`);
       setImgLoaded(true);
       setZoomLevel(1);
       setPan({ x: 0, y: 0 });
       updateDisplaySize();
     };
   }, [imageSrc, updateDisplaySize]);
+
 
   // Lắng nghe thay đổi kích thước container bằng ResizeObserver
   useEffect(() => {
@@ -268,109 +279,139 @@ export default function SkeletonCanvas({
 
   return (
     <div className="flex flex-col h-full bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl select-none">
-      {/* Canvas Toolbar */}
-      <div className="h-12 bg-slate-900/95 border-b border-slate-800 px-4 flex items-center justify-between shrink-0 z-10">
-        {/* Toggles */}
-        <div className="flex items-center space-x-1.5">
+      {/* Canvas Toolbar - Senior UI Redesign (Không bao giờ bị tràn/xuống dòng chữ) */}
+      <div className="h-12 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-3 sm:px-4 flex items-center justify-between shrink-0 z-10 gap-3 overflow-x-auto no-scrollbar">
+        {/* Zone 1 (Left): Layer Visualization Toggles */}
+        <div className="flex items-center space-x-1 bg-slate-950/70 p-1 rounded-xl border border-slate-800/80 shrink-0">
           <button
             onClick={() => setShowBoxes(!showBoxes)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-              showBoxes ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40" : "bg-slate-800 text-slate-400 hover:text-slate-200"
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              showBoxes
+                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
             }`}
+            title="Bật/Tắt hiển thị Bounding Box"
           >
             <span>Box</span>
           </button>
           <button
             onClick={() => setShowSkeleton(!showSkeleton)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-              showSkeleton ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" : "bg-slate-800 text-slate-400 hover:text-slate-200"
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              showSkeleton
+                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
             }`}
+            title="Bật/Tắt hiển thị Khung xương (Bones)"
           >
             <span>Bones</span>
           </button>
           <button
             onClick={() => setShowPoints(!showPoints)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-              showPoints ? "bg-amber-500/20 text-amber-300 border border-amber-500/40" : "bg-slate-800 text-slate-400 hover:text-slate-200"
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              showPoints
+                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
             }`}
+            title="Bật/Tắt hiển thị 17 Điểm khớp (Keypoints)"
           >
             <span>17 Pts</span>
           </button>
           <button
             onClick={() => setShowLabels(!showLabels)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center space-x-1 transition-colors ${
-              showLabels ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40" : "bg-slate-800 text-slate-400 hover:text-slate-200"
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center space-x-1 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              showLabels
+                ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
             }`}
+            title="Bật/Tắt tên gọi khớp (Labels)"
           >
-            <Tag className="w-3 h-3" />
+            <Tag className="w-3 h-3 shrink-0" />
             <span>Labels</span>
           </button>
         </div>
 
-        {/* Next / Pre Navigation Controls */}
-        {totalImages > 0 && (
-          <div className="flex items-center space-x-1.5 bg-slate-950/80 border border-slate-800 rounded-xl px-2 py-1 shadow-inner">
-            <button
-              onClick={onPrevImage}
-              disabled={!hasPrev}
-              className="px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center space-x-1 transition-all bg-slate-800 hover:bg-cyan-600 hover:text-white text-slate-200 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
-              title="Xem ảnh trước (Pre / Phím ←)"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Pre</span>
-            </button>
-
-            <span className="text-xs font-mono text-cyan-300 font-bold px-2">
-              {imageIndex + 1} / {totalImages}
+        {/* Zone 2 (Center): Active Model Attribution */}
+        <div className="flex items-center shrink-0">
+          {/* Badge nguồn gốc nhãn hiện tại (Gọn gàng, chỉ hiển thị tên model không kèm ngoặc) */}
+          <div className="flex items-center space-x-1.5 px-3 py-1 rounded-xl bg-slate-950/80 border border-slate-800 text-xs shrink-0 shadow-sm">
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Nhãn:</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shrink-0"></span>
+            <span className="font-semibold text-cyan-300 font-mono text-[11px] whitespace-nowrap">
+              {formatModelName(currentModelName)}
             </span>
+          </div>
+        </div>
+
+
+        {/* Zone 3 (Right): Navigation + Viewport Controls */}
+        <div className="flex items-center space-x-2 shrink-0">
+          {/* Image Navigation */}
+          {totalImages > 0 && (
+            <div className="flex items-center space-x-0.5 bg-slate-950/70 border border-slate-800/80 rounded-xl p-0.5 shadow-inner shrink-0">
+              <button
+                onClick={onPrevImage}
+                disabled={!hasPrev}
+                className="px-2 py-1 rounded-lg text-xs font-semibold flex items-center space-x-1 transition-all bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-30 disabled:pointer-events-none cursor-pointer whitespace-nowrap shrink-0"
+                title="Xem ảnh trước (Pre / Phím ←)"
+              >
+                <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Pre</span>
+              </button>
+
+              <span className="text-xs font-mono text-cyan-300 font-bold px-2 whitespace-nowrap">
+                {imageIndex + 1} <span className="text-slate-600 font-normal">/</span> {totalImages}
+              </span>
+
+              <button
+                onClick={onNextImage}
+                disabled={!hasNext}
+                className="px-2 py-1 rounded-lg text-xs font-semibold flex items-center space-x-1 transition-all bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-30 disabled:pointer-events-none cursor-pointer whitespace-nowrap shrink-0"
+                title="Xem ảnh sau (Next / Phím →)"
+              >
+                <span className="hidden sm:inline">Next</span>
+                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+              </button>
+            </div>
+          )}
+
+          {/* Phân cách nhẹ */}
+          <div className="h-5 w-[1px] bg-slate-800 shrink-0 hidden sm:block"></div>
+
+          {/* Zoom Controls */}
+          <div className="flex items-center space-x-1 bg-slate-950/70 border border-slate-800/80 rounded-xl p-0.5 shrink-0">
+            <button
+              onClick={handleResetFit}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center space-x-1 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                zoomLevel === 1
+                  ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
+                  : "bg-slate-800/80 text-slate-300 hover:bg-slate-700"
+              }`}
+              title="Tự động thu nhỏ vừa khít toàn bộ bức ảnh (không bị cắt) (Phím F)"
+            >
+              <Maximize2 className="w-3.5 h-3.5 shrink-0" />
+              <span className="whitespace-nowrap font-medium">Vừa khung</span>
+            </button>
+
+            <div className="text-xs text-slate-300 font-mono w-10 text-center shrink-0">
+              {Math.round(zoomLevel * 100)}%
+            </div>
 
             <button
-              onClick={onNextImage}
-              disabled={!hasNext}
-              className="px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center space-x-1 transition-all bg-slate-800 hover:bg-cyan-600 hover:text-white text-slate-200 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
-              title="Xem ảnh sau (Next / Phím →)"
+              onClick={() => setZoomLevel((z) => Math.max(z * 0.8, 0.5))}
+              className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer shrink-0"
+              title="Thu nhỏ (-)"
             >
-              <span>Next</span>
-              <ChevronRight className="w-3.5 h-3.5" />
+              <ZoomOut className="w-3.5 h-3.5 shrink-0" />
+            </button>
+
+            <button
+              onClick={() => setZoomLevel((z) => Math.min(z * 1.25, 4.0))}
+              className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer shrink-0"
+              title="Phóng to (+)"
+            >
+              <ZoomIn className="w-3.5 h-3.5 shrink-0" />
             </button>
           </div>
-        )}
-
-        {/* View Controls */}
-        <div className="flex items-center space-x-2">
-          {/* Nút Hiển thị Full Toàn Bộ Ảnh */}
-          <button
-            onClick={handleResetFit}
-            className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition-colors ${
-              zoomLevel === 1
-                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-            }`}
-            title="Tự động thu nhỏ vừa khít toàn bộ bức ảnh (không bị cắt)"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-            <span>Xem Toàn Bộ Ảnh (Full)</span>
-          </button>
-
-          <div className="text-xs text-slate-400 font-mono w-14 text-center">
-            {Math.round(zoomLevel * 100)}%
-          </div>
-
-          <button
-            onClick={() => setZoomLevel((z) => Math.min(z * 1.25, 4.0))}
-            className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
-            title="Phóng to (+)"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={() => setZoomLevel((z) => Math.max(z * 0.8, 0.5))}
-            className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
-            title="Thu nhỏ (-)"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
         </div>
       </div>
 
@@ -454,10 +495,11 @@ export default function SkeletonCanvas({
               <span>•</span>
             </span>
           )}
-          <span>Độ phân giải gốc: {imgRef.current ? `${imgRef.current.naturalWidth}x${imgRef.current.naturalHeight}` : "--"}</span>
+          <span>Độ phân giải gốc: {naturalResolution || "--"}</span>
           <span>•</span>
           <span>Số người: <strong className="text-cyan-400">{predictions.length}</strong></span>
         </div>
+
       </div>
     </div>
   );

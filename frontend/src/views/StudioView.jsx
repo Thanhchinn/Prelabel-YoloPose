@@ -1,9 +1,21 @@
 import React, { useState, useEffect } from "react";
-import { Upload, Play, Sliders, Image as ImageIcon, CheckCircle, ArrowRight, Loader2, RefreshCw, PlusCircle, AlertTriangle, RotateCcw, Sparkles } from "lucide-react";
+import { CheckCircle, AlertTriangle, PlusCircle, RefreshCw, Loader2 } from "lucide-react";
 import SkeletonCanvas from "../components/canvas/SkeletonCanvas";
+import ModelSelector from "../components/studio/ModelSelector";
+import ConfidenceControls from "../components/studio/ConfidenceControls";
+import UploadCard from "../components/studio/UploadCard";
+import CVATSyncCard from "../components/studio/CVATSyncCard";
+import ImageGallery from "../components/studio/ImageGallery";
 import { api } from "../services/api";
 
-export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTask }) {
+export default function StudioView({
+  onNavigateToCVAT,
+  viewTaskId,
+  onClearViewTask,
+  selectedModelType = "yolo",
+  onSelectModelType,
+  availableModels = [],
+}) {
   const [images, setImages] = useState([]);
   const [selectedImage, setSelectedImage] = useState(null);
   const [predictionsMap, setPredictionsMap] = useState({});
@@ -11,8 +23,11 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
   const [confThreshold, setConfThreshold] = useState(0.5);
   const [kptConfThreshold, setKptConfThreshold] = useState(0.5);
   const [isUploading, setIsUploading] = useState(false);
-  const [isPredicting, setIsPredicting] = useState(false);
+  const [isPredictingSingle, setIsPredictingSingle] = useState(false);
+  const [isPredictingAll, setIsPredictingAll] = useState(false);
+  const isPredicting = isPredictingSingle || isPredictingAll;
   const [statusMsg, setStatusMsg] = useState("");
+  const [modelMetaMap, setModelMetaMap] = useState({});
 
   // CVAT 2-way Sync state
   const [cvatTasks, setCvatTasks] = useState([]);
@@ -24,7 +39,7 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
   const [showResetModal, setShowResetModal] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
 
-  // Tải cấu hình và danh sách ảnh khi khởi tạo
+  // Khởi tạo cấu hình và danh sách ảnh
   useEffect(() => {
     loadConfig();
     fetchImages();
@@ -34,15 +49,13 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
   // Auto-pull khi nhận viewTaskId từ CVAT Hub (nút "Xem Web")
   useEffect(() => {
     if (viewTaskId) {
-      // Tìm tên task trong danh sách
-      const task = cvatTasks.find(t => t.id === viewTaskId);
+      const task = cvatTasks.find((t) => t.id === viewTaskId);
       if (task) {
         setViewingTaskName(task.name);
       } else {
         setViewingTaskName(`Task #${viewTaskId}`);
       }
       setSelectedCvatTaskId(viewTaskId);
-      // Auto-pull annotations
       autoPullTask(viewTaskId);
     }
   }, [viewTaskId]);
@@ -120,6 +133,12 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
               ...prev,
               [selectedImage.name]: data.predictions,
             }));
+            if (data.model_name) {
+              setModelMetaMap((prev) => ({
+                ...prev,
+                [selectedImage.name]: data.model_name,
+              }));
+            }
           }
         })
         .catch((err) => console.error("Error loading cached prediction:", err));
@@ -144,31 +163,73 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
     }
   };
 
-  const handleRunPredict = async () => {
+  // 1-Click Fast Run trên ảnh hiện tại (~35ms)
+  const handleRunPredictSingle = async () => {
+    if (!selectedImage) return;
+
+    const curModel = availableModels.find((m) => m.id === selectedModelType) || availableModels[0] || { name: "AI Pose" };
+    setIsPredictingSingle(true);
+    setStatusMsg(`Mô hình ${curModel.name} đang suy luận ảnh ${selectedImage.name}...`);
+    try {
+      const res = await api.predict({
+        image_names: [selectedImage.name],
+        conf_threshold: confThreshold,
+        kpt_conf_threshold: kptConfThreshold,
+        model_type: selectedModelType,
+      });
+
+      if (res && res.results && res.results.length > 0) {
+        const item = res.results[0];
+        setPredictionsMap((prev) => ({
+          ...prev,
+          [selectedImage.name]: item.predictions,
+        }));
+        setModelMetaMap((prev) => ({
+          ...prev,
+          [selectedImage.name]: item.model_name || curModel.name,
+        }));
+        setSelectedImage((prev) => (prev ? { ...prev, has_prediction: true } : prev));
+        setStatusMsg(`Đã cập nhật dự đoán ${curModel.name} cho ảnh hiện tại!`);
+      }
+    } catch (err) {
+      setStatusMsg(`Lỗi khi chạy ${curModel.name}: ` + err.message);
+    } finally {
+      setIsPredictingSingle(false);
+      setTimeout(() => setStatusMsg(""), 4000);
+    }
+  };
+
+  // Chạy toàn bộ bộ ảnh hiện có
+  const handleRunPredictAll = async () => {
     if (images.length === 0) {
       alert("Vui lòng tải lên ít nhất 1 ảnh trước khi chạy pre-label.");
       return;
     }
 
-    setIsPredicting(true);
-    setStatusMsg("Mô hình YOLO 26 đang xử lý suy luận 17 keypoints...");
+    const curModel = availableModels.find((m) => m.id === selectedModelType) || availableModels[0] || { name: "AI Pose" };
+    setIsPredictingAll(true);
+    setStatusMsg(`Mô hình ${curModel.name} đang xử lý suy luận toàn bộ ${images.length} ảnh...`);
     try {
       const res = await api.predict({
         conf_threshold: confThreshold,
         kpt_conf_threshold: kptConfThreshold,
+        model_type: selectedModelType,
       });
 
-      const newMap = {};
+      const newMap = { ...predictionsMap };
+      const newMetaMap = { ...modelMetaMap };
       res.results.forEach((r) => {
         newMap[r.image_name] = r.predictions;
+        newMetaMap[r.image_name] = r.model_name || curModel.name;
       });
       setPredictionsMap(newMap);
-      setStatusMsg(`Đã dự đoán xong ${res.total_images} ảnh!`);
+      setModelMetaMap(newMetaMap);
+      setStatusMsg(`Đã dự đoán xong ${res.total_images} ảnh bằng ${curModel.name}!`);
       await fetchImages();
     } catch (err) {
-      setStatusMsg("Lỗi khi chạy dự đoán YOLO 26.");
+      setStatusMsg(`Lỗi khi chạy dự đoán ${curModel.name}: ` + err.message);
     } finally {
-      setIsPredicting(false);
+      setIsPredictingAll(false);
       setTimeout(() => setStatusMsg(""), 4000);
     }
   };
@@ -207,12 +268,12 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
   const handleResetWorkspace = async () => {
     setIsResetting(true);
     try {
-      const currentTask = cvatTasks.find(t => String(t.id) === String(selectedCvatTaskId));
+      const currentTask = cvatTasks.find((t) => String(t.id) === String(selectedCvatTaskId));
       const effectiveTaskName = viewingTaskName || (currentTask ? currentTask.name : "");
       const res = await api.resetWorkspace({
         is_viewing_task: Boolean(viewingTaskName),
         task_name: effectiveTaskName,
-        task_id: selectedCvatTaskId ? parseInt(selectedCvatTaskId, 10) : null
+        task_id: selectedCvatTaskId ? parseInt(selectedCvatTaskId, 10) : null,
       });
       setImages([]);
       setSelectedImage(null);
@@ -242,173 +303,59 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
 
   const currentPredictions = selectedImage ? predictionsMap[selectedImage.name] || [] : [];
   const currentImageUrl = selectedImage ? `http://localhost:8000${selectedImage.url}` : "";
+  const currentActiveModelName =
+    selectedImage && modelMetaMap[selectedImage.name]
+      ? modelMetaMap[selectedImage.name]
+      : availableModels.find((m) => m.id === selectedModelType)?.name || "YOLO 26 Pose";
 
   return (
     <div className="grid grid-cols-12 gap-6 h-[calc(100vh-7rem)]">
-      {/* CỘT TRÁI: Settings & Upload Gallery (35% - 4 cols) - Hỗ trợ scroll mượt mà không bị cắt */}
+      {/* CỘT TRÁI: Settings & Controls (Modularized - 4 cols) */}
       <div className="col-span-12 lg:col-span-4 flex flex-col space-y-3.5 h-full overflow-y-auto pr-1.5 custom-scrollbar">
         {/* Upload Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-semibold text-slate-200 flex items-center space-x-1.5">
-              <Upload className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Tải ảnh lên (Upload)</span>
-            </h3>
-            <div className="flex items-center space-x-2">
-              <span className="text-[11px] text-slate-400 font-mono">{images.length} ảnh</span>
-              {images.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowResetModal(true)}
-                  className="px-2 py-0.5 rounded-lg text-[10px] font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center space-x-1 transition-all cursor-pointer shadow-sm active:scale-95"
-                  title="Dọn dẹp và bắt đầu đợt gán nhãn mới"
-                >
-                  <PlusCircle className="w-3 h-3 text-rose-400" />
-                  <span>Đợt mới</span>
-                </button>
-              )}
-            </div>
-          </div>
+        <UploadCard
+          imagesCount={images.length}
+          onUpload={handleFileUpload}
+          isUploading={isUploading}
+          onOpenResetModal={() => setShowResetModal(true)}
+        />
 
-          <label className="border-2 border-dashed border-slate-700/80 hover:border-cyan-500/60 rounded-xl py-3 px-4 flex items-center justify-center space-x-3 cursor-pointer transition-all bg-slate-950/40 hover:bg-slate-800/30">
-            <input
-              type="file"
-              multiple
-              accept="image/*"
-              onChange={handleFileUpload}
-              className="hidden"
-              disabled={isUploading}
-            />
-            {isUploading ? (
-              <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
-            ) : (
-              <Upload className="w-5 h-5 text-slate-400" />
-            )}
-            <div className="flex flex-col">
-              <span className="text-xs font-medium text-slate-300">Click hoặc kéo thả ảnh vào đây</span>
-              <span className="text-[10px] text-slate-500">JPG, PNG, WEBP</span>
-            </div>
-          </label>
-        </div>
+        {/* Model Architecture Selector Card */}
+        <ModelSelector
+          availableModels={availableModels}
+          selectedModelType={selectedModelType}
+          onSelectModelType={onSelectModelType}
+          disabled={isPredicting}
+        />
 
-        {/* Sliders Configuration */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-sm space-y-2.5">
-          <div className="flex items-center space-x-2 text-xs font-semibold text-slate-200">
-            <Sliders className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Ngưỡng tin cậy (Confidence)</span>
-          </div>
-
-          <div>
-            <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-              <span>Bbox Conf:</span>
-              <span className="text-cyan-400 font-mono font-medium">{confThreshold.toFixed(2)}</span>
-            </div>
-            <input
-              type="range"
-              min="0.1"
-              max="0.9"
-              step="0.05"
-              value={confThreshold}
-              onChange={(e) => setConfThreshold(parseFloat(e.target.value))}
-              className="w-full accent-cyan-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg"
-            />
-          </div>
-
-          <div>
-            <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-              <span>Keypoint Conf:</span>
-              <span className="text-cyan-400 font-mono font-medium">{kptConfThreshold.toFixed(2)}</span>
-            </div>
-            <input
-              type="range"
-              min="0.1"
-              max="0.9"
-              step="0.05"
-              value={kptConfThreshold}
-              onChange={(e) => setKptConfThreshold(parseFloat(e.target.value))}
-              className="w-full accent-cyan-500 cursor-pointer h-1.5 bg-slate-700 rounded-lg"
-            />
-          </div>
-
-          {/* Action Button: Run Pre-label */}
-          <button
-            onClick={handleRunPredict}
-            disabled={isPredicting || images.length === 0}
-            className="w-full mt-1 py-2 px-3 rounded-xl font-medium text-xs flex items-center justify-center space-x-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20 transition-all disabled:opacity-50 cursor-pointer"
-          >
-            {isPredicting ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Đang suy luận YOLO 26...</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 fill-white" />
-                <span>Chạy Pre-label với YOLO 26</span>
-              </>
-            )}
-          </button>
-        </div>
+        {/* Confidence Sliders & Dual Action Buttons */}
+        <ConfidenceControls
+          confThreshold={confThreshold}
+          onChangeConfThreshold={setConfThreshold}
+          kptConfThreshold={kptConfThreshold}
+          onChangeKptConfThreshold={setKptConfThreshold}
+          onRunPredictSingle={handleRunPredictSingle}
+          onRunPredictAll={handleRunPredictAll}
+          isPredictingSingle={isPredictingSingle}
+          isPredictingAll={isPredictingAll}
+          hasImages={images.length > 0}
+          hasSelectedImage={Boolean(selectedImage)}
+          imagesCount={images.length}
+          activeModelName={availableModels.find((m) => m.id === selectedModelType)?.name || "AI Pose"}
+        />
 
         {/* CVAT 2-Way Pull Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-sm space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-xs font-semibold text-slate-200">
-              <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${isPulling ? "animate-spin" : ""}`} />
-              <span>Đồng bộ nhãn từ CVAT</span>
-            </div>
-            <span className="text-[10px] text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono font-medium">
-              2-Way Sync
-            </span>
-          </div>
-
-          <p className="text-[11px] text-slate-400 leading-relaxed">
-            Kéo tọa độ khớp và cờ <span className="text-amber-300 font-semibold">Occluded (nét đứt)</span> đã sửa trên CVAT về Web.
-          </p>
-
-          <div className="space-y-2 pt-0.5">
-            {cvatTasks.length > 0 ? (
-              <select
-                value={selectedCvatTaskId}
-                onChange={(e) => setSelectedCvatTaskId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none cursor-pointer focus:border-cyan-500/60"
-              >
-                {cvatTasks.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    #{t.id} — {t.name} ({t.size || "?"} ảnh)
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div className="text-[11px] text-slate-500 bg-slate-950/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-center">
-                Chưa có task nào từ Studio. Hãy tạo task tại trang <span className="text-cyan-400">CVAT Task Hub</span> trước.
-              </div>
-            )}
-
-            <button
-              onClick={handlePullFromCVAT}
-              disabled={isPulling || !selectedCvatTaskId}
-              className="w-full py-2 px-3 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-500/25 to-amber-600/20 hover:from-amber-500/35 hover:to-amber-600/30 text-amber-300 border border-amber-500/40 flex items-center justify-center space-x-2 transition-all disabled:opacity-40 cursor-pointer shadow-sm active:scale-[0.99]"
-              title="Kéo nhãn đã sửa trên CVAT về Web Studio"
-            >
-              {isPulling ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-300" />
-                  <span>Đang kéo nhãn từ CVAT...</span>
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Kéo nhãn đã sửa từ CVAT về Web</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
+        <CVATSyncCard
+          cvatTasks={cvatTasks}
+          selectedCvatTaskId={selectedCvatTaskId}
+          onSelectTaskId={setSelectedCvatTaskId}
+          onPullFromCVAT={handlePullFromCVAT}
+          isPulling={isPulling}
+        />
 
         {/* Status Message Banner */}
         {statusMsg && (
-          <div className="p-2.5 rounded-xl text-xs bg-cyan-950/70 border border-cyan-500/40 text-cyan-200 flex items-center space-x-2 animate-fadeIn">
+          <div className="p-2.5 rounded-xl text-xs bg-cyan-950/70 border border-cyan-500/40 text-cyan-200 flex items-center space-x-2 animate-fadeIn shrink-0">
             <CheckCircle className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
             <span className="truncate">{statusMsg}</span>
           </div>
@@ -416,7 +363,7 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
 
         {/* Viewing Task Banner */}
         {viewingTaskName && (
-          <div className="p-3 rounded-xl text-xs bg-gradient-to-r from-violet-950/80 to-indigo-950/70 border border-violet-500/40 text-violet-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm">
+          <div className="p-3 rounded-xl text-xs bg-gradient-to-r from-violet-950/80 to-indigo-950/70 border border-violet-500/40 text-violet-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm shrink-0">
             <div className="flex items-center space-x-2 min-w-0">
               <RefreshCw className="w-3.5 h-3.5 text-violet-400 shrink-0" />
               <div className="truncate">
@@ -446,66 +393,14 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
         )}
 
         {/* Thumbnail Gallery */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-sm flex flex-col min-h-[220px]">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-300 mb-2">
-            <span>Danh sách ảnh đã tải:</span>
-            <div className="flex items-center space-x-2">
-              <span className="text-[11px] text-slate-400 font-mono">{images.length} ảnh</span>
-              {images.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowResetModal(true)}
-                  className="px-2 py-1 rounded-lg text-[11px] font-medium bg-gradient-to-r from-rose-500/20 to-orange-500/15 hover:from-rose-500/30 hover:to-orange-500/25 text-rose-300 border border-rose-500/30 flex items-center space-x-1 transition-all cursor-pointer shadow-sm active:scale-95"
-                  title="Dọn dẹp ảnh cũ để bắt đầu đợt gán nhãn mới"
-                >
-                  <PlusCircle className="w-3.5 h-3.5 text-rose-400" />
-                  <span>Bắt đầu đợt mới</span>
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="max-h-[240px] overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
-            {images.length === 0 ? (
-              <div className="text-center py-8 text-xs text-slate-500">Chưa có ảnh nào được tải lên.</div>
-            ) : (
-              images.map((img) => {
-                const isSelected = selectedImage?.name === img.name;
-                const hasPred = img.has_prediction || predictionsMap[img.name];
-                return (
-                  <div
-                    key={img.name}
-                    onClick={() => setSelectedImage(img)}
-                    className={`flex items-center justify-between p-2 rounded-xl cursor-pointer border transition-all ${
-                      isSelected
-                        ? "bg-cyan-950/40 border-cyan-500/50 text-cyan-200 shadow-sm"
-                        : "bg-slate-950/40 border-slate-800/80 hover:bg-slate-800/50 text-slate-300"
-                    }`}
-                  >
-                    <div className="flex items-center space-x-2.5 truncate">
-                      <ImageIcon className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-                      <span className="text-xs truncate">{img.name}</span>
-                    </div>
-                    {hasPred && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1 shrink-0 font-medium">
-                        <CheckCircle className="w-2.5 h-2.5" />
-                        <span>Pre-labeled</span>
-                      </span>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Quick jump to CVAT */}
-          <button
-            onClick={onNavigateToCVAT}
-            className="mt-3 w-full py-2 px-3 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center space-x-2 transition-colors cursor-pointer"
-          >
-            <span>Đồng bộ sang CVAT Local</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        <ImageGallery
+          images={images}
+          selectedImage={selectedImage}
+          onSelectImage={setSelectedImage}
+          predictionsMap={predictionsMap}
+          onOpenResetModal={() => setShowResetModal(true)}
+          onNavigateToCVAT={onNavigateToCVAT}
+        />
       </div>
 
       {/* CỘT PHẢI: Inspection Canvas (65% - 8 cols) */}
@@ -514,6 +409,7 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
           imageSrc={currentImageUrl}
           predictions={currentPredictions}
           skeletonEdges={skeletonEdges}
+          currentModelName={currentActiveModelName}
           onPrevImage={handlePrevImage}
           onNextImage={handleNextImage}
           hasPrev={currentIndex > 0}
@@ -521,6 +417,7 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
           imageIndex={currentIndex >= 0 ? currentIndex : 0}
           totalImages={images.length}
         />
+
       </div>
 
       {/* Modal xác nhận Bắt đầu đợt gán nhãn mới */}
@@ -578,4 +475,3 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
     </div>
   );
 }
-

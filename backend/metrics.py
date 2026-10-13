@@ -14,12 +14,68 @@ from schemas import MetricsResponse, KeypointMetricDetail
 
 class MetricsCalculator:
     @staticmethod
+    def compute_iou(box1: List[float], box2: List[float]) -> float:
+        """Tính Intersection over Union (IoU) giữa 2 bounding box [x1, y1, x2, y2]."""
+        x1 = max(box1[0], box2[0])
+        y1 = max(box1[1], box2[1])
+        x2 = min(box1[2], box2[2])
+        y2 = min(box1[3], box2[3])
+        inter_w = max(0.0, x2 - x1)
+        inter_h = max(0.0, y2 - y1)
+        inter_area = inter_w * inter_h
+        area1 = max(0.0, box1[2] - box1[0]) * max(0.0, box1[3] - box1[1])
+        area2 = max(0.0, box2[2] - box2[0]) * max(0.0, box2[3] - box2[1])
+        union_area = area1 + area2 - inter_area
+        if union_area <= 0:
+            return 0.0
+        return inter_area / union_area
+
+    @staticmethod
+    def match_frame_persons(preds: List[Dict[str, Any]], gts: List[Dict[str, Any]]) -> List[tuple]:
+        """
+        Ghép cặp người trong cùng 1 frame theo độ trùng khớp Bounding Box (IoU hoặc khoảng cách tâm).
+        Ưu tiên cặp có IoU cao nhất, tránh so sánh chéo người khi có nhiều đối tượng.
+        """
+        if not preds or not gts:
+            return []
+        used_gts = set()
+        pairs = []
+        for p in preds:
+            best_gt_idx = -1
+            best_score = -1.0
+            p_box = p.get("bbox", [0, 0, 100, 100])
+            pcx = (p_box[0] + p_box[2]) / 2.0
+            pcy = (p_box[1] + p_box[3]) / 2.0
+
+            for g_idx, g in enumerate(gts):
+                if g_idx in used_gts:
+                    continue
+                g_box = g.get("bbox", [0, 0, 100, 100])
+                iou = MetricsCalculator.compute_iou(p_box, g_box)
+                gcx = (g_box[0] + g_box[2]) / 2.0
+                gcy = (g_box[1] + g_box[3]) / 2.0
+                center_dist = math.sqrt((pcx - gcx) ** 2 + (pcy - gcy) ** 2)
+                # Điểm số kết hợp IoU và khoảng cách
+                score = iou - (center_dist / 2000.0)
+
+                if score > best_score:
+                    best_score = score
+                    best_gt_idx = g_idx
+
+            if best_gt_idx >= 0:
+                used_gts.add(best_gt_idx)
+                pairs.append((p, gts[best_gt_idx]))
+        return pairs
+
+    @staticmethod
     def calculate_metrics(
         predictions: List[Dict[str, Any]],
         ground_truths: List[Dict[str, Any]],
         task_id: int = 1,
         alpha_pck: float = 0.2,
-        correction_threshold_px: float = 5.0
+        correction_threshold_px: float = 5.0,
+        model_name: str = "YOLO 26 Pose",
+        model_type: str = "yolo"
     ) -> MetricsResponse:
         """
         Tính toán PCK, NME và Human Correction Rate.
@@ -37,17 +93,18 @@ class MetricsCalculator:
             for name in COCO_KEYPOINTS
         }
 
-        # Duyệt qua các cặp skeleton (giả định 1-1 hoặc ghép cặp theo bbox)
+        # Duyệt qua các cặp skeleton (1-1)
         pair_count = min(len(predictions), len(ground_truths))
 
         if pair_count == 0:
-            # Fallback nếu chưa có ground truth
             details = [
                 KeypointMetricDetail(name=k, pck=0.0, correction_rate=0.0, mean_error_px=0.0)
                 for k in COCO_KEYPOINTS
             ]
             return MetricsResponse(
                 task_id=task_id,
+                model_name=model_name,
+                model_type=model_type,
                 total_skeletons=0,
                 pck_overall=0.0,
                 nme_overall=0.0,
@@ -120,6 +177,8 @@ class MetricsCalculator:
 
         return MetricsResponse(
             task_id=task_id,
+            model_name=model_name,
+            model_type=model_type,
             total_skeletons=pair_count,
             pck_overall=overall_pck,
             nme_overall=overall_nme,
