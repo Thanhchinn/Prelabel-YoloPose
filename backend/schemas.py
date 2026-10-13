@@ -75,3 +75,8 @@ class RetrainExportResponse(BaseModel):
     train_samples: int
     val_samples: int
     message: str
+
+class WorkspaceResetRequest(BaseModel):
+    is_viewing_task: bool = False
+    task_id: Optional[int] = None
+    task_name: Optional[str] = None

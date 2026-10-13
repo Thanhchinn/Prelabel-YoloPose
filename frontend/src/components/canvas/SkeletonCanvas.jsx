@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import { ZoomIn, ZoomOut, Maximize2, Tag, Move, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Tag, Move, RefreshCw, ChevronLeft, ChevronRight, Image as ImageIcon } from "lucide-react";
 
 export default function SkeletonCanvas({
   imageSrc,
@@ -386,8 +386,16 @@ export default function SkeletonCanvas({
         }`}
       >
         {!imageSrc ? (
-          <div className="text-center text-slate-500 text-sm">
-            Chưa có ảnh nào được chọn để hiển thị.
+          <div className="flex flex-col items-center justify-center text-center p-8 max-w-sm space-y-3 select-none">
+            <div className="w-16 h-16 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center justify-center shadow-inner">
+              <ImageIcon className="w-8 h-8 text-slate-600" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-sm font-semibold text-slate-300">Không gian làm việc đang trống</h4>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Hãy kéo thả hoặc tải bộ ảnh mới ở cột bên trái để bắt đầu gán nhãn AI Pose 17 Keypoints.
+              </p>
+            </div>
           </div>
         ) : (
           <div

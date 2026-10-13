@@ -32,6 +32,16 @@ export const api = {
     return res.json();
   },
 
+  async resetWorkspace(payload = {}) {
+    const res = await fetch(`${API_BASE}/workspace/reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("Failed to reset workspace");
+    return res.json();
+  },
+
   async getImagePrediction(imageName) {
     const res = await fetch(`${API_BASE}/images/${encodeURIComponent(imageName)}/prediction`);
     if (!res.ok) return null;

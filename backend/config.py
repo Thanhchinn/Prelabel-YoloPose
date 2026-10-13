@@ -11,9 +11,10 @@ UPLOAD_DIR = BASE_DIR / "data" / "uploads"
 OUTPUT_DIR = BASE_DIR / "data" / "outputs"
 DATASET_DIR = BASE_DIR / "data" / "datasets"
 WEIGHTS_DIR = BASE_DIR / "backend" / "weights"
+ARCHIVE_DIR = BASE_DIR / "data" / "archives"
 
 # Đảm bảo các thư mục tồn tại
-for d in [UPLOAD_DIR, OUTPUT_DIR, DATASET_DIR, WEIGHTS_DIR]:
+for d in [UPLOAD_DIR, OUTPUT_DIR, DATASET_DIR, WEIGHTS_DIR, ARCHIVE_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # Cấu hình Server

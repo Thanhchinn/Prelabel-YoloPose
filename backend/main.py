@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from config import (
-    HOST, PORT, UPLOAD_DIR, OUTPUT_DIR, DATASET_DIR,
+    HOST, PORT, UPLOAD_DIR, OUTPUT_DIR, DATASET_DIR, ARCHIVE_DIR,
     CVAT_HOST, COCO_KEYPOINTS, COCO_SKELETON_EDGES,
     CONF_THRESHOLD, KPT_CONF_THRESHOLD
 )
@@ -22,7 +22,8 @@ from schemas import (
     PredictConfig, BatchPredictResponse, ImagePredictionResult,
     CVATTaskCreateRequest, CVATTaskResponse,
     MetricsRequest, MetricsResponse,
-    RetrainExportRequest, RetrainExportResponse
+    RetrainExportRequest, RetrainExportResponse,
+    WorkspaceResetRequest
 )
 from model_service import model_service
 from converter import AnnotationConverter
@@ -113,6 +114,111 @@ def list_uploaded_images():
                 "has_prediction": json_cache.exists()
             })
     return {"total": len(images), "images": images}
+
+@app.post("/api/workspace/reset")
+def reset_workspace(request: Optional[WorkspaceResetRequest] = None):
+    """
+    Làm sạch không gian làm việc để sẵn sàng cho đợt ảnh mới (New Batch).
+    - Tự động nhận diện Task: Mỗi Task chỉ tạo ĐÚNG 1 thư mục duy nhất theo tên Task
+      (ví dụ: data/archives/task_51_Pose_Batch_1012).
+    - Khi xem lại cùng một task nhiều lần: KHÔNG tạo thêm thư mục trùng lặp,
+      tái sử dụng và cập nhật thư mục task đã có.
+    """
+    import datetime
+    import re
+
+    current_images = [
+        f for f in UPLOAD_DIR.iterdir()
+        if f.suffix.lower() in [".jpg", ".jpeg", ".png", ".webp"]
+    ]
+
+    target_archive_folder = None
+    created_new_folder = False
+    archived_count = 0
+
+    if current_images:
+        # Xác định tên thư mục lưu trữ phù hợp
+        if request and (request.task_id or request.task_name):
+            parts = []
+            if request.task_id:
+                parts.append(f"task_{request.task_id}")
+            if request.task_name:
+                clean_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', request.task_name)
+                clean_name = clean_name.strip('_')
+                if clean_name and (not parts or clean_name not in parts[0]):
+                    parts.append(clean_name)
+            folder_name = "_".join(parts) if parts else f"task_{request.task_id}"
+            target_archive_folder = ARCHIVE_DIR / folder_name
+        else:
+            # Không có thông tin task: Kiểm tra xem các ảnh này đã từng nằm trong archive nào chưa
+            matched_folder = None
+            if ARCHIVE_DIR.exists():
+                for subfolder in ARCHIVE_DIR.iterdir():
+                    if subfolder.is_dir():
+                        sample_img = current_images[0]
+                        candidate = subfolder / sample_img.name
+                        if candidate.exists() and candidate.stat().st_size == sample_img.stat().st_size:
+                            matched_folder = subfolder
+                            break
+            if matched_folder:
+                target_archive_folder = matched_folder
+            else:
+                timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                target_archive_folder = ARCHIVE_DIR / f"batch_{timestamp_str}"
+
+        # Nếu thư mục chưa tồn tại -> Tạo mới (1 lần duy nhất cho task này)
+        if not target_archive_folder.exists():
+            target_archive_folder.mkdir(parents=True, exist_ok=True)
+            created_new_folder = True
+
+        # Copy các file ảnh và nhãn vào thư mục target_archive_folder
+        for img_file in current_images:
+            dest_img = target_archive_folder / img_file.name
+            if not dest_img.exists() or dest_img.stat().st_size != img_file.stat().st_size:
+                try:
+                    shutil.copy2(str(img_file), str(dest_img))
+                except Exception as e:
+                    print(f"[Archive] Error copying image {img_file.name}: {e}")
+
+            json_file = OUTPUT_DIR / f"{img_file.stem}.json"
+            if json_file.exists():
+                dest_json = target_archive_folder / json_file.name
+                try:
+                    shutil.copy2(str(json_file), str(dest_json))
+                except Exception as e:
+                    print(f"[Archive] Error copying json {json_file.name}: {e}")
+
+        archived_count = len(current_images)
+
+    # Dọn sạch UPLOAD_DIR và OUTPUT_DIR
+    for f in UPLOAD_DIR.iterdir():
+        if f.is_file():
+            try:
+                f.unlink()
+            except Exception:
+                pass
+
+    for f in OUTPUT_DIR.iterdir():
+        if f.is_file() and f.suffix == ".json":
+            try:
+                f.unlink()
+            except Exception:
+                pass
+
+    if created_new_folder:
+        msg = f"Đã lưu trữ {archived_count} ảnh vào thư mục '{target_archive_folder.name}' và làm sạch không gian làm việc."
+    elif target_archive_folder:
+        msg = f"Đã lưu giữ trong thư mục '{target_archive_folder.name}' và làm sạch không gian làm việc (không tạo thư mục trùng lặp)."
+    else:
+        msg = "Đã làm sạch không gian làm việc. Sẵn sàng nạp ảnh mới!"
+
+    return {
+        "success": True,
+        "archive_folder": target_archive_folder.name if target_archive_folder else None,
+        "created_new_folder": created_new_folder,
+        "archived_count": archived_count,
+        "message": msg
+    }
 
 @app.get("/api/images/{image_name}/prediction")
 def get_image_prediction(image_name: str):
@@ -284,6 +390,32 @@ def pull_cvat_annotations(task_id: int):
         width = frame.get("width", 1280)
         height = frame.get("height", 720)
 
+        # 1. Đảm bảo file ảnh tồn tại trong UPLOAD_DIR để Canvas có ảnh hiển thị
+        target_img = UPLOAD_DIR / pure_name
+        if not target_img.exists():
+            # Tìm trong archives trước để khôi phục nhanh
+            found_archive = None
+            if ARCHIVE_DIR.exists():
+                for arch_match in ARCHIVE_DIR.rglob(pure_name):
+                    if arch_match.is_file():
+                        found_archive = arch_match
+                        break
+            if found_archive:
+                try:
+                    shutil.copy2(str(found_archive), str(target_img))
+                except Exception as e:
+                    print(f"[Restore Image] Copy from archive failed: {e}")
+
+            # Nếu trong archive chưa có -> Tải trực tiếp frame từ CVAT
+            if not target_img.exists():
+                frame_bytes = cvat_client.download_task_frame(task_id, f_idx)
+                if frame_bytes:
+                    try:
+                        with open(target_img, "wb") as f_img:
+                            f_img.write(frame_bytes)
+                    except Exception as e:
+                        print(f"[Restore Image] Save CVAT frame failed: {e}")
+
         persons = AnnotationConverter.from_cvat_annotations(
             annotations_json=annotations,
             frame_number=f_idx,
@@ -307,12 +439,23 @@ def pull_cvat_annotations(task_id: int):
             "predictions": [p.model_dump() for p in persons]
         })
 
+    images_list = []
+    for item in updated_images:
+        f_p = UPLOAD_DIR / item["image_name"]
+        images_list.append({
+            "name": item["image_name"],
+            "url": f"/api/images/uploads/{item['image_name']}",
+            "size_kb": round(f_p.stat().st_size / 1024, 1) if f_p.exists() else 0,
+            "has_prediction": True
+        })
+
     return {
         "success": True,
         "task_id": task_id,
         "total_frames": len(frames),
         "updated_images": updated_images,
-        "message": f"Đã kéo và cập nhật thành công {len(updated_images)} ảnh từ CVAT Task #{task_id} về Web Studio!"
+        "images": images_list,
+        "message": f"Đã kéo và khôi phục thành công {len(updated_images)} ảnh cùng nhãn từ CVAT Task #{task_id} về Web Studio!"
     }
 
 @app.post("/api/metrics/evaluate", response_model=MetricsResponse)

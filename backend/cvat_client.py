@@ -245,4 +245,20 @@ class CVATClient:
             print(f"[CVAT Client] Error getting task meta: {e}")
             return None
 
+    def download_task_frame(self, task_id: int, frame_idx: int) -> Optional[bytes]:
+        """Tải dữ liệu ảnh gốc của một frame cụ thể trong Task từ CVAT."""
+        self._ensure_authenticated()
+
+        try:
+            url = f"{self.host}/api/tasks/{task_id}/data"
+            params = {"type": "frame", "quality": "original", "number": frame_idx}
+            res = self.session.get(url, params=params, timeout=20)
+            if res.status_code == 200:
+                return res.content
+            print(f"[CVAT Client] Failed to download frame {frame_idx}: {res.status_code}")
+            return None
+        except Exception as e:
+            print(f"[CVAT Client] Error downloading frame {frame_idx} for task {task_id}: {e}")
+            return None
+
 cvat_client = CVATClient()

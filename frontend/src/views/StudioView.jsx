@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Upload, Play, Sliders, Image as ImageIcon, CheckCircle, ArrowRight, Loader2, RefreshCw } from "lucide-react";
+import { Upload, Play, Sliders, Image as ImageIcon, CheckCircle, ArrowRight, Loader2, RefreshCw, PlusCircle, AlertTriangle, RotateCcw, Sparkles } from "lucide-react";
 import SkeletonCanvas from "../components/canvas/SkeletonCanvas";
 import { api } from "../services/api";
 
@@ -19,6 +19,10 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
   const [selectedCvatTaskId, setSelectedCvatTaskId] = useState("");
   const [isPulling, setIsPulling] = useState(false);
   const [viewingTaskName, setViewingTaskName] = useState("");
+
+  // New Batch / Reset Workspace state
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   // Tải cấu hình và danh sách ảnh khi khởi tạo
   useEffect(() => {
@@ -55,7 +59,12 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
         });
         setPredictionsMap(newMap);
         setStatusMsg(res.message || `Đã tải nhãn từ CVAT Task #${taskId}!`);
-        await fetchImages();
+        if (res.images && res.images.length > 0) {
+          setImages(res.images);
+          setSelectedImage(res.images[0]);
+        } else {
+          await fetchImages();
+        }
       }
     } catch (err) {
       setStatusMsg("Lỗi khi tải nhãn từ CVAT: " + err.message);
@@ -180,12 +189,41 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
         });
         setPredictionsMap(newMap);
         setStatusMsg(res.message || "Cập nhật nhãn từ CVAT thành công!");
-        await fetchImages();
+        if (res.images && res.images.length > 0) {
+          setImages(res.images);
+          setSelectedImage(res.images[0]);
+        } else {
+          await fetchImages();
+        }
       }
     } catch (err) {
       setStatusMsg("Lỗi khi kéo nhãn từ CVAT: " + err.message);
     } finally {
       setIsPulling(false);
+      setTimeout(() => setStatusMsg(""), 5000);
+    }
+  };
+
+  const handleResetWorkspace = async () => {
+    setIsResetting(true);
+    try {
+      const currentTask = cvatTasks.find(t => String(t.id) === String(selectedCvatTaskId));
+      const effectiveTaskName = viewingTaskName || (currentTask ? currentTask.name : "");
+      const res = await api.resetWorkspace({
+        is_viewing_task: Boolean(viewingTaskName),
+        task_name: effectiveTaskName,
+        task_id: selectedCvatTaskId ? parseInt(selectedCvatTaskId, 10) : null
+      });
+      setImages([]);
+      setSelectedImage(null);
+      setPredictionsMap({});
+      setViewingTaskName("");
+      setStatusMsg(res.message || "Đã làm sạch không gian làm việc. Sẵn sàng tải bộ ảnh mới!");
+      setShowResetModal(false);
+    } catch (err) {
+      alert("Lỗi khi dọn dẹp không gian làm việc: " + err.message);
+    } finally {
+      setIsResetting(false);
       setTimeout(() => setStatusMsg(""), 5000);
     }
   };
@@ -216,7 +254,20 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
               <Upload className="w-3.5 h-3.5 text-cyan-400" />
               <span>Tải ảnh lên (Upload)</span>
             </h3>
-            <span className="text-[11px] text-slate-400 font-mono">{images.length} ảnh</span>
+            <div className="flex items-center space-x-2">
+              <span className="text-[11px] text-slate-400 font-mono">{images.length} ảnh</span>
+              {images.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowResetModal(true)}
+                  className="px-2 py-0.5 rounded-lg text-[10px] font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center space-x-1 transition-all cursor-pointer shadow-sm active:scale-95"
+                  title="Dọn dẹp và bắt đầu đợt gán nhãn mới"
+                >
+                  <PlusCircle className="w-3 h-3 text-rose-400" />
+                  <span>Đợt mới</span>
+                </button>
+              )}
+            </div>
           </div>
 
           <label className="border-2 border-dashed border-slate-700/80 hover:border-cyan-500/60 rounded-xl py-3 px-4 flex items-center justify-center space-x-3 cursor-pointer transition-all bg-slate-950/40 hover:bg-slate-800/30">
@@ -365,17 +416,32 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
 
         {/* Viewing Task Banner */}
         {viewingTaskName && (
-          <div className="p-2.5 rounded-xl text-xs bg-violet-950/60 border border-violet-500/40 text-violet-200 flex items-center justify-between">
-            <div className="flex items-center space-x-2">
+          <div className="p-3 rounded-xl text-xs bg-gradient-to-r from-violet-950/80 to-indigo-950/70 border border-violet-500/40 text-violet-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm">
+            <div className="flex items-center space-x-2 min-w-0">
               <RefreshCw className="w-3.5 h-3.5 text-violet-400 shrink-0" />
-              <span>Đang xem nhãn của: <span className="font-semibold text-violet-300">{viewingTaskName}</span></span>
+              <div className="truncate">
+                Đang xem nhãn: <span className="font-semibold text-violet-300 font-mono">{viewingTaskName}</span>
+                {images.length > 0 && <span className="text-[11px] text-violet-400 ml-1.5">({images.length} ảnh)</span>}
+              </div>
             </div>
-            <button
-              onClick={() => setViewingTaskName("")}
-              className="text-[10px] text-violet-400 hover:text-violet-200 underline cursor-pointer"
-            >
-              Ẩn
-            </button>
+            <div className="flex items-center space-x-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowResetModal(true)}
+                className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-colors cursor-pointer flex items-center space-x-1"
+                title="Quay lại không gian làm việc sạch để tải ảnh mới"
+              >
+                <PlusCircle className="w-3 h-3 text-rose-400" />
+                <span>Quay về đợt mới</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewingTaskName("")}
+                className="text-[11px] text-violet-400 hover:text-violet-200 cursor-pointer"
+              >
+                Ẩn
+              </button>
+            </div>
           </div>
         )}
 
@@ -383,7 +449,20 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-sm flex flex-col min-h-[220px]">
           <div className="flex items-center justify-between text-xs font-semibold text-slate-300 mb-2">
             <span>Danh sách ảnh đã tải:</span>
-            <span className="text-[11px] text-slate-400 font-mono">{images.length} ảnh</span>
+            <div className="flex items-center space-x-2">
+              <span className="text-[11px] text-slate-400 font-mono">{images.length} ảnh</span>
+              {images.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowResetModal(true)}
+                  className="px-2 py-1 rounded-lg text-[11px] font-medium bg-gradient-to-r from-rose-500/20 to-orange-500/15 hover:from-rose-500/30 hover:to-orange-500/25 text-rose-300 border border-rose-500/30 flex items-center space-x-1 transition-all cursor-pointer shadow-sm active:scale-95"
+                  title="Dọn dẹp ảnh cũ để bắt đầu đợt gán nhãn mới"
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Bắt đầu đợt mới</span>
+                </button>
+              )}
+            </div>
           </div>
           <div className="max-h-[240px] overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
             {images.length === 0 ? (
@@ -443,6 +522,59 @@ export default function StudioView({ onNavigateToCVAT, viewTaskId, onClearViewTa
           totalImages={images.length}
         />
       </div>
+
+      {/* Modal xác nhận Bắt đầu đợt gán nhãn mới */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start space-x-3.5">
+              <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-slate-100">
+                  Bắt đầu đợt gán nhãn mới (New Batch)?
+                </h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Toàn bộ <span className="text-rose-300 font-semibold">{images.length} ảnh</span> và nhãn tạm thời trên Web Studio sẽ được <span className="text-slate-200 font-medium">sao lưu tự động</span> vào thư mục <code className="text-[11px] bg-slate-950 px-1 py-0.5 rounded text-cyan-400">data/archives</code> và dọn sạch không gian làm việc để sẵn sàng nạp bộ ảnh mới.
+                </p>
+                <p className="text-[11px] text-emerald-400 pt-1">
+                  ✓ Các Task bạn đã tạo hoặc sửa trên CVAT Local hoàn toàn được lưu giữ an toàn.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-slate-800/80">
+              <button
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                disabled={isResetting}
+                className="px-3.5 py-2 rounded-xl text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleResetWorkspace}
+                disabled={isResetting}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 shadow-md shadow-rose-900/30 flex items-center space-x-1.5 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+              >
+                {isResetting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Đang dọn dẹp...</span>
+                  </>
+                ) : (
+                  <>
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>Xác nhận tạo đợt mới</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
