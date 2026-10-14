@@ -10,6 +10,7 @@ export default function MainLayout({
   isRefreshing,
   selectedModelType = "yolo",
   availableModels = [],
+  onSelectModelType,
   onOpenCVATConfig,
   children,
 }) {
@@ -44,7 +45,7 @@ export default function MainLayout({
   }, []);
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+    <div className="flex h-screen bg-zinc-950 text-zinc-100 overflow-hidden font-sans antialiased">
       {/* Sidebar cố định bên trái (Hỗ trợ đóng/mở thu gọn) */}
       <Sidebar
         activeTab={activeTab}
@@ -62,17 +63,17 @@ export default function MainLayout({
           onRefreshHealth={onRefreshHealth}
           isRefreshing={isRefreshing}
           selectedModelType={selectedModelType}
+          availableModels={availableModels}
+          onSelectModelType={onSelectModelType}
           isSidebarCollapsed={isSidebarCollapsed}
           onToggleSidebar={toggleSidebar}
           onOpenCVATConfig={onOpenCVATConfig}
         />
 
-
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6 bg-slate-950 custom-scrollbar">
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6 bg-zinc-950">
           {children}
         </main>
       </div>
     </div>
   );
 }
-

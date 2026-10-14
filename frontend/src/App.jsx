@@ -4,14 +4,16 @@ import StudioView from "./views/StudioView";
 import CVATSyncView from "./views/CVATSyncView";
 import AnalyticsView from "./views/AnalyticsView";
 import ModelBenchmarkView from "./views/ModelBenchmarkView";
+import RetrainView from "./views/RetrainView";
 import CVATConfigModal from "./components/common/CVATConfigModal";
 import { api } from "./services/api";
+import { ToastProvider } from "./context/ToastContext";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("studio");
   const [health, setHealth] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [targetTaskId, setTargetTaskId] = useState(101);
+  const [targetTaskId, setTargetTaskId] = useState(null);
   const [isCVATConfigOpen, setIsCVATConfigOpen] = useState(false);
 
   // Task ID to view in Studio (when clicking "Xem Web" from CVAT Hub)
@@ -95,58 +97,71 @@ export default function App() {
   };
 
   return (
-    <MainLayout
-      activeTab={activeTab}
-      onSelectTab={setActiveTab}
-      health={health}
-      onRefreshHealth={fetchHealth}
-      isRefreshing={isRefreshing}
-      selectedModelType={selectedModelType}
-      availableModels={availableModels}
-      onOpenCVATConfig={() => setIsCVATConfigOpen(true)}
-    >
-      {activeTab === "studio" && (
-        <StudioView
-          onNavigateToCVAT={() => setActiveTab("cvat")}
-          viewTaskId={viewTaskId}
-          onClearViewTask={() => setViewTaskId(null)}
-          selectedModelType={selectedModelType}
-          onSelectModelType={setSelectedModelType}
-          availableModels={availableModels}
-        />
-      )}
-      {activeTab === "cvat" && (
-        <CVATSyncView
-          onEvaluateTask={handleEvaluateTask}
-          onViewTask={handleViewTask}
-          selectedModelType={selectedModelType}
-          onSelectModelType={setSelectedModelType}
-          availableModels={availableModels}
-          health={health}
-          onOpenCVATConfig={() => setIsCVATConfigOpen(true)}
-        />
-      )}
-      {activeTab === "analytics" && (
-        <AnalyticsView
-          initialTaskId={targetTaskId}
-          selectedModelType={selectedModelType}
-          availableModels={availableModels}
-        />
-      )}
-      {activeTab === "benchmark" && (
-        <ModelBenchmarkView
-          onNavigateToStudio={() => setActiveTab("studio")}
-          selectedModelType={selectedModelType}
-          onSelectModelType={setSelectedModelType}
-        />
-      )}
+    <ToastProvider>
+      <MainLayout
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        health={health}
+        onRefreshHealth={fetchHealth}
+        isRefreshing={isRefreshing}
+        selectedModelType={selectedModelType}
+        availableModels={availableModels}
+        onSelectModelType={setSelectedModelType}
+        onOpenCVATConfig={() => setIsCVATConfigOpen(true)}
+      >
+        {activeTab === "studio" && (
+          <StudioView
+            onNavigateToCVAT={() => setActiveTab("cvat")}
+            viewTaskId={viewTaskId}
+            onClearViewTask={() => setViewTaskId(null)}
+            selectedModelType={selectedModelType}
+            onSelectModelType={setSelectedModelType}
+            availableModels={availableModels}
+          />
+        )}
+        {activeTab === "cvat" && (
+          <CVATSyncView
+            onEvaluateTask={handleEvaluateTask}
+            onViewTask={handleViewTask}
+            selectedModelType={selectedModelType}
+            onSelectModelType={setSelectedModelType}
+            availableModels={availableModels}
+            health={health}
+            onOpenCVATConfig={() => setIsCVATConfigOpen(true)}
+          />
+        )}
+        {activeTab === "retrain" && (
+          <RetrainView
+            selectedModelType={selectedModelType}
+            onSelectModelType={setSelectedModelType}
+            onNavigateToStudio={() => setActiveTab("studio")}
+            onRefreshModels={fetchModels}
+          />
+        )}
+        {activeTab === "analytics" && (
+          <AnalyticsView
+            initialTaskId={targetTaskId}
+            onClearTargetTask={() => setTargetTaskId(null)}
+            selectedModelType={selectedModelType}
+            availableModels={availableModels}
+            onNavigateToCVAT={() => setActiveTab("cvat")}
+          />
+        )}
+        {activeTab === "benchmark" && (
+          <ModelBenchmarkView
+            onNavigateToStudio={() => setActiveTab("studio")}
+            selectedModelType={selectedModelType}
+            onSelectModelType={setSelectedModelType}
+          />
+        )}
 
-      {/* CVAT Settings Modal */}
-      <CVATConfigModal
-        isOpen={isCVATConfigOpen}
-        onClose={() => setIsCVATConfigOpen(false)}
-        onConfigSaved={fetchHealth}
-      />
-    </MainLayout>
+        {/* CVAT Settings Modal */}
+        <CVATConfigModal
+          isOpen={isCVATConfigOpen}
+          onClose={() => setIsCVATConfigOpen(false)}
+          onConfigSaved={fetchHealth}
+        />
+      </MainLayout>
+    </ToastProvider>
   );
 }

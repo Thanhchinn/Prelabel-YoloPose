@@ -1,6 +1,21 @@
 import React, { useState, useEffect } from "react";
-import { Layers, ExternalLink, RefreshCw, CheckCircle2, Download, BarChart2, Loader2, Eye, Clock, ImageIcon, FolderPlus, Sparkles, Zap, Check, Settings, AlertCircle } from "lucide-react";
+import {
+  Layers,
+  ExternalLink,
+  RefreshCw,
+  CheckCircle2,
+  Download,
+  BarChart2,
+  Eye,
+  Clock,
+  FolderPlus,
+  Sparkles,
+  Settings,
+  AlertCircle,
+  Image as ImageIcon,
+} from "lucide-react";
 import { api } from "../services/api";
+import { Button, Input, Select, TableSkeletonRows, EmptyState, toast } from "../components/ui";
 
 export default function CVATSyncView({
   onEvaluateTask,
@@ -23,7 +38,7 @@ export default function CVATSyncView({
     badge: "Fast",
   };
 
-  // Task list state - giờ tải từ CVAT thật
+  // Task list state - tải từ CVAT thật
   const [tasks, setTasks] = useState([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [filterType, setFilterType] = useState("studio");
@@ -34,7 +49,6 @@ export default function CVATSyncView({
   }, [filterType]);
 
   const generateNextTaskName = (existingTasks) => {
-    // Tìm số lớn nhất trong các task có dạng Pose_Batch_XXXX
     let maxNum = 0;
     let padLength = 0;
     const today = new Date().toISOString().slice(5, 10).replace("-", "");
@@ -56,7 +70,6 @@ export default function CVATSyncView({
       const nextNumStr = padLength > 0 ? String(maxNum + 1).padStart(padLength, "0") : String(maxNum + 1);
       return `${basePrefix}${nextNumStr}`;
     }
-    // Nếu chưa có task nào → dùng ngày hôm nay
     return `${basePrefix}${today}`;
   };
 
@@ -66,7 +79,6 @@ export default function CVATSyncView({
       const res = await api.listCVATTasks(filterType);
       if (res && res.tasks) {
         setTasks(res.tasks);
-        // Auto-generate next task name
         setTaskName(generateNextTaskName(res.tasks));
       } else {
         setTaskName(generateNextTaskName([]));
@@ -92,11 +104,22 @@ export default function CVATSyncView({
         model_type: selectedModelType,
       });
       setSyncResult(res);
-
-      // Tải lại danh sách tasks từ CVAT để có dữ liệu thật
+      toast.success("Đồng bộ CVAT thành công", {
+        description: res.message,
+        metadata: [
+          { label: "Task", value: `#${res.task_id}` },
+          { label: "Số ảnh", value: `${res.image_count}` },
+          { label: "Model", value: activeModelObj.name.split("(")[0].trim() },
+        ],
+        action: res.cvat_url
+          ? { label: "Mở CVAT ->", onClick: () => window.open(res.cvat_url, "_blank") }
+          : null,
+      });
       await loadTasks();
     } catch (err) {
-      alert("Lỗi khi kết nối tới CVAT: " + err.message);
+      toast.error("Đồng bộ sang CVAT thất bại", {
+        description: err.message,
+      });
     } finally {
       setIsSyncing(false);
     }
@@ -105,11 +128,30 @@ export default function CVATSyncView({
   const handleExportRetrain = async (taskId) => {
     setExportLoading(true);
     setExportMessage("Đang kéo Ground Truth từ CVAT và đóng gói dataset...");
+    const toastId = toast.loading("Đang xuất dataset huấn luyện...", {
+      description: `Đang kéo Ground Truth từ Task #${taskId} và đóng gói...`,
+    });
     try {
       const res = await api.exportDataset(taskId, `yolo26_task_${taskId}`);
-      setExportMessage(`Thành công! Dataset đã xuất ra: ${res.dataset_path} (${res.train_samples} train, ${res.val_samples} val). Sẵn sàng bấm lệnh train.`);
+      const successMsg = `Dataset đã xuất ra: ${res.dataset_path} (${res.train_samples} train, ${res.val_samples} val). Sẵn sàng huấn luyện.`;
+      setExportMessage(`Thành công! ${successMsg}`);
+      toast.update(toastId, {
+        type: "success",
+        title: "Đóng gói Dataset thành công",
+        description: "Dataset chuẩn YOLO Pose đã sẵn sàng huấn luyện lại mô hình.",
+        metadata: [
+          { label: "Task", value: `#${taskId}` },
+          { label: "Train", value: `${res.train_samples}` },
+          { label: "Val", value: `${res.val_samples}` },
+        ],
+      });
     } catch (err) {
       setExportMessage("Lỗi khi xuất dataset: " + err.message);
+      toast.update(toastId, {
+        type: "error",
+        title: "Xuất Dataset thất bại",
+        description: err.message,
+      });
     } finally {
       setExportLoading(false);
     }
@@ -117,98 +159,103 @@ export default function CVATSyncView({
 
   const getStatusBadge = (status) => {
     const map = {
-      "annotation": { text: "Đang gán nhãn", color: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
-      "validation": { text: "Đang kiểm tra", color: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
-      "completed": { text: "Hoàn thành", color: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+      annotation: { text: "Đang gán nhãn", dot: "bg-amber-400", style: "bg-amber-500/10 text-amber-300 border-amber-500/20" },
+      validation: { text: "Đang kiểm tra", dot: "bg-sky-400", style: "bg-sky-500/10 text-sky-300 border-sky-500/20" },
+      completed: { text: "Hoàn thành", dot: "bg-emerald-400", style: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20" },
     };
-    const s = map[status] || { text: status || "Pre-labeled", color: "bg-cyan-500/15 text-cyan-400 border-cyan-500/30" };
+    const s = map[status] || {
+      text: status || "Pre-labeled",
+      dot: "bg-zinc-400",
+      style: "bg-zinc-800 text-zinc-300 border-zinc-700/60",
+    };
     return (
-      <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${s.color}`}>
-        {s.text}
+      <span className={`inline-flex items-center space-x-1.5 px-2 py-0.5 rounded text-[11px] font-medium border ${s.style}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+        <span>{s.text}</span>
       </span>
     );
   };
 
   const formatModelOptionLabel = (m) => {
-    if (m.id === "yolo") return `⚡ ${m.name} — Siêu nhanh (~20ms)`;
-    if (m.id === "rtmpose") return `🚀 ${m.name} — Cân bằng (75.8 mAP)`;
-    if (m.id === "vitpose") return `🧠 ${m.name} — Chuẩn xác cao (77.4+ mAP)`;
+    if (m.id === "yolo") return `${m.name} — Siêu nhanh (~20ms)`;
+    if (m.id === "rtmpose") return `${m.name} — Cân bằng (75.8 mAP)`;
+    if (m.id === "vitpose") return `${m.name} — Chuẩn xác cao (77.4+ mAP)`;
     return `${m.name}`;
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6">
       {/* Title + Quick Settings Trigger */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
-            <Layers className="w-5 h-5 text-cyan-400" />
-            <span>Trung tâm đồng bộ CVAT Local & Active Learning</span>
+          <h2 className="text-lg font-semibold text-zinc-100 tracking-tight flex items-center space-x-2">
+            <Layers className="w-5 h-5 text-zinc-400" />
+            <span>Trung tâm đồng bộ CVAT & Active Learning</span>
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Tạo task trên CVAT với skeleton 17 điểm COCO, nạp nhãn pre-label từ AI Engine đa mô hình và xuất dataset để huấn luyện lại.
-            <span className="text-cyan-400 ml-1 font-medium">Chỉ hiển thị task được tạo từ Web Studio.</span>
+          <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+            Khởi tạo task trên CVAT với bộ xương 17 điểm COCO, nạp nhãn từ AI Engine và xuất dataset huấn luyện.
           </p>
         </div>
 
         {onOpenCVATConfig && (
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="sm"
             onClick={onOpenCVATConfig}
-            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 text-xs font-semibold transition-all cursor-pointer shadow-sm shrink-0 self-start sm:self-auto hover:border-cyan-500/50"
+            icon={Settings}
+            className="shrink-0 self-start sm:self-auto"
             title="Cấu hình tài khoản & máy chủ CVAT"
           >
-            <Settings className="w-4 h-4 text-cyan-400" />
-            <span>Cài đặt tài khoản CVAT</span>
-          </button>
+            Cài đặt CVAT
+          </Button>
         )}
       </div>
 
-      {/* Unauthenticated Alert for Teammates */}
+      {/* Unauthenticated Alert */}
       {health?.cvat_local?.online && !health?.cvat_local?.authenticated && (
-        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start justify-between gap-4 shadow-lg shadow-amber-950/20">
+        <div className="p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/20 flex items-start justify-between gap-4">
           <div className="flex items-start space-x-3">
-            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <div className="space-y-0.5">
-              <h4 className="text-xs font-bold text-amber-200">Chưa xác thực tài khoản CVAT Local</h4>
-              <p className="text-[11px] text-slate-300">
-                Tài khoản CVAT hiện tại (<code className="text-amber-300 font-mono font-semibold">{health?.cvat_local?.username || "chưa cấu hình"}</code>) chưa đăng nhập được vào máy chủ.
-                Vui lòng bấm nút bên cạnh để nhập đúng tài khoản / mật khẩu CVAT của bạn.
+              <h4 className="text-xs font-medium text-amber-200">Chưa xác thực tài khoản CVAT Local</h4>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Tài khoản CVAT hiện tại (<code className="text-amber-300 font-mono text-[11px]">{health?.cvat_local?.username || "chưa cấu hình"}</code>) chưa đăng nhập được vào máy chủ. Vui lòng bấm cài đặt để cấu hình lại.
               </p>
             </div>
           </div>
-          <button
+          <Button
             type="button"
+            variant="primary"
+            size="sm"
             onClick={onOpenCVATConfig}
-            className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 cursor-pointer transition-colors shadow-sm"
+            className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-medium shrink-0"
           >
-            Cấu hình tài khoản
-          </button>
+            Cấu hình
+          </Button>
         </div>
       )}
 
       {/* Sync Creation Form Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
-        {/* Subtle top ambient gradient line */}
-        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500" />
-
+      <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-xl p-5 shadow-xs">
         <form onSubmit={handleCreateTask} className="space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Field 1: Task Name */}
             <div className="space-y-1.5">
-              <label className="flex items-center space-x-1.5 text-xs font-semibold text-slate-200">
-                <FolderPlus className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Tên Task trên CVAT:</span>
+              <label className="flex items-center space-x-1.5 text-xs font-medium text-zinc-300">
+                <FolderPlus className="w-3.5 h-3.5 text-zinc-400" />
+                <span>Tên Task trên CVAT</span>
               </label>
-              <input
+              <Input
+                size="md"
+                isMono
                 type="text"
                 value={taskName}
                 onChange={(e) => setTaskName(e.target.value)}
                 placeholder="Nhập tên task..."
-                className="w-full bg-slate-950 border border-slate-700/80 focus:border-cyan-500 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 outline-none transition-all shadow-inner font-mono"
                 required
               />
-              <p className="text-[10px] text-slate-500">
+              <p className="text-[11px] text-zinc-500">
                 Tự động đánh số theo đợt gần nhất đã tạo trên hệ thống.
               </p>
             </div>
@@ -216,63 +263,63 @@ export default function CVATSyncView({
             {/* Field 2: AI Pre-label Model */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="flex items-center space-x-1.5 text-xs font-semibold text-slate-200">
-                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Mô hình AI Pre-label:</span>
+                <label className="flex items-center space-x-1.5 text-xs font-medium text-zinc-300">
+                  <Sparkles className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Mô hình AI Pre-label</span>
                 </label>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-medium">
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 font-medium">
                   Đang chọn
                 </span>
               </div>
               {availableModels.length > 0 ? (
-                <select
+                <Select
+                  size="md"
                   value={selectedModelType}
                   onChange={(e) => onSelectModelType && onSelectModelType(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700/80 focus:border-cyan-500 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 outline-none transition-all cursor-pointer shadow-inner"
                 >
                   {availableModels.map((m) => (
                     <option key={m.id} value={m.id}>
                       {formatModelOptionLabel(m)}
                     </option>
                   ))}
-                </select>
+                </Select>
               ) : (
-                <input
+                <Input
+                  size="md"
                   type="text"
                   value={activeModelObj.name}
                   disabled
-                  className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-400"
                 />
               )}
-              <p className="text-[10px] text-slate-500">
-                Khung xương 17 điểm của mô hình này sẽ được đẩy sang CVAT.
+              <p className="text-[11px] text-zinc-500">
+                Khung xương 17 điểm của mô hình này sẽ được nạp sang CVAT.
               </p>
             </div>
           </div>
 
           {/* Action Bar: Toggle Prelabels & Submit Button */}
-          <div className="pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="pt-4 border-t border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <label className="flex items-center space-x-3 cursor-pointer select-none group">
               <div
                 onClick={() => setIncludePrelabels(!includePrelabels)}
-                className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
-                  includePrelabels ? "bg-cyan-500" : "bg-slate-800"
+                className={`w-9 h-5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-150 ${
+                  includePrelabels ? "bg-zinc-100" : "bg-zinc-800"
                 }`}
               >
                 <div
-                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
-                    includePrelabels ? "translate-x-5" : "translate-x-0"
+                  className={`w-4 h-4 rounded-full shadow-xs transform transition-transform duration-150 ${
+                    includePrelabels ? "translate-x-4 bg-zinc-950" : "translate-x-0 bg-zinc-400"
                   }`}
                 />
               </div>
               <div>
-                <div className="text-xs font-semibold text-slate-200 group-hover:text-cyan-300 transition-colors flex items-center space-x-1.5">
+                <div className="text-xs font-medium text-zinc-200 group-hover:text-zinc-100 transition-colors flex items-center space-x-1.5">
                   <span>Nạp sẵn khung xương AI</span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                  <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60">
                     {activeModelObj.name.split("(")[0].trim()}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-400">
+                <p className="text-[11px] text-zinc-500">
                   {includePrelabels
                     ? "Ảnh tải lên CVAT sẽ có sẵn 17 keypoints để annotator kiểm tra và sửa nhanh."
                     : "Chỉ tải ảnh thô lên CVAT, không nạp nhãn sẵn."}
@@ -280,37 +327,31 @@ export default function CVATSyncView({
               </div>
             </label>
 
-            <button
+            <Button
               type="submit"
-              disabled={isSyncing}
-              className="py-2.5 px-6 rounded-xl font-semibold text-xs flex items-center justify-center space-x-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/25 transition-all disabled:opacity-50 cursor-pointer active:scale-95 shrink-0"
+              variant="primary"
+              size="md"
+              isLoading={isSyncing}
+              loadingText="Đang đồng bộ CVAT..."
+              icon={Layers}
+              className="shrink-0"
             >
-              {isSyncing ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Đang kết nối CVAT & nạp nhãn...</span>
-                </>
-              ) : (
-                <>
-                  <Layers className="w-4 h-4" />
-                  <span>Đồng bộ sang CVAT ({activeModelObj.name.split("(")[0].trim()})</span>
-                </>
-              )}
-            </button>
+              Đồng bộ sang CVAT ({activeModelObj.name.split("(")[0].trim()})
+            </Button>
           </div>
         </form>
 
         {/* Sync Success Banner */}
         {syncResult && (
-          <div className="mt-5 p-4 rounded-xl bg-cyan-950/40 border border-cyan-500/40 flex items-start justify-between">
-            <div className="flex items-start space-x-3">
-              <CheckCircle2 className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+          <div className="mt-4 p-3.5 rounded-lg bg-emerald-500/5 border border-emerald-500/20 flex items-start justify-between gap-4">
+            <div className="flex items-start space-x-2.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <div>
-                <div className="text-xs font-semibold text-cyan-200">
+                <div className="text-xs font-medium text-emerald-300">
                   {syncResult.message}
                 </div>
-                <div className="text-[11px] text-slate-400 mt-1">
-                  Task ID: <span className="font-mono text-cyan-400">{syncResult.task_id}</span> | Số lượng: {syncResult.image_count} ảnh
+                <div className="text-[11px] text-zinc-400 mt-0.5">
+                  Task ID: <span className="font-mono text-zinc-200">#{syncResult.task_id}</span> • Số lượng: {syncResult.image_count} ảnh
                 </div>
               </div>
             </div>
@@ -318,50 +359,50 @@ export default function CVATSyncView({
               href={syncResult.cvat_url}
               target="_blank"
               rel="noreferrer"
-              className="py-1.5 px-3.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs flex items-center space-x-1.5 transition-colors shrink-0"
+              className="py-1 px-2.5 rounded-md bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80 font-medium text-xs flex items-center space-x-1.5 transition-colors shrink-0"
             >
-              <span>Mở Task trên CVAT</span>
-              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Mở CVAT</span>
+              <ExternalLink className="w-3 h-3 text-zinc-400" />
             </a>
           </div>
         )}
 
         {/* Export Status Banner */}
         {exportMessage && (
-          <div className="mt-4 p-3 rounded-xl bg-slate-950 border border-emerald-500/40 text-xs text-emerald-300 flex items-center space-x-2">
-            <Download className="w-4 h-4 text-emerald-400 shrink-0" />
+          <div className="mt-3 p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-300 flex items-center space-x-2">
+            <Download className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
             <span>{exportMessage}</span>
           </div>
         )}
       </div>
 
       {/* Task List */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+      <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-xl p-5 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center space-x-3">
-            <h3 className="text-sm font-semibold text-slate-200">
-              Danh sách Task CVAT:
+            <h3 className="text-xs font-medium text-zinc-200 uppercase tracking-wider">
+              Danh sách Task CVAT
             </h3>
             {/* Filter Toggle Buttons */}
-            <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[11px]">
+            <div className="flex items-center bg-zinc-950 p-0.5 rounded-lg border border-zinc-800 text-[11px]">
               <button
                 type="button"
                 onClick={() => setFilterType("studio")}
                 className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
                   filterType === "studio"
-                    ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200"
+                    ? "bg-zinc-850 text-zinc-100 shadow-xs"
+                    : "text-zinc-400 hover:text-zinc-200"
                 }`}
               >
-                Task từ Web Studio
+                Từ Web Studio
               </button>
               <button
                 type="button"
                 onClick={() => setFilterType("all")}
                 className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
                   filterType === "all"
-                    ? "bg-slate-700/60 text-slate-200 border border-slate-600 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200"
+                    ? "bg-zinc-850 text-zinc-100 shadow-xs"
+                    : "text-zinc-400 hover:text-zinc-200"
                 }`}
               >
                 Tất cả Task
@@ -369,101 +410,127 @@ export default function CVATSyncView({
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <span className="text-xs text-slate-400">{tasks.length} tasks</span>
-            <button
+            <span className="text-xs text-zinc-500 font-mono">{tasks.length} tasks</span>
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={loadTasks}
               disabled={isLoadingTasks}
-              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+              className="h-7 w-7 p-0"
               title="Tải lại danh sách tasks"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingTasks ? "animate-spin" : ""}`} />
-            </button>
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingTasks ? "animate-spin text-zinc-200" : ""}`} />
+            </Button>
           </div>
         </div>
 
+        {/* Loading State with TableSkeletonRows */}
         {isLoadingTasks && tasks.length === 0 ? (
-          <div className="flex items-center justify-center py-8 space-x-2 text-slate-400">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-xs">Đang tải danh sách tasks từ CVAT...</span>
+          <div className="py-2">
+            <TableSkeletonRows rows={4} />
           </div>
         ) : tasks.length === 0 ? (
-          <div className="text-center py-8">
-            <Layers className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-            <p className="text-xs text-slate-500">Chưa có task nào được tạo từ Web Studio.</p>
-            <p className="text-[11px] text-slate-600 mt-1">Tạo task mới ở phần trên để bắt đầu.</p>
-          </div>
+          <EmptyState
+            icon={Layers}
+            title="Chưa có task nào được tạo từ Web Studio"
+            description="Khởi tạo task mới ở biểu mẫu phía trên để tải ảnh và nhãn AI sang CVAT cho đội ngũ kiểm duyệt."
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider">
-                  <th className="pb-3 font-semibold">Task ID</th>
-                  <th className="pb-3 font-semibold">Tên Task</th>
-                  <th className="pb-3 font-semibold">Số ảnh</th>
-                  <th className="pb-3 font-semibold">Trạng thái</th>
-                  <th className="pb-3 font-semibold">Ngày tạo</th>
-                  <th className="pb-3 font-semibold text-right">Hành động</th>
+              <thead className="bg-zinc-950/40">
+                <tr className="border-b border-zinc-800 text-zinc-500 uppercase text-[10px] tracking-wider font-mono">
+                  <th className="py-2.5 px-3 font-medium">ID</th>
+                  <th className="py-2.5 px-2 font-medium">Tên Task</th>
+                  <th className="py-2.5 px-2 font-medium">Số ảnh</th>
+                  <th className="py-2.5 px-2 font-medium">Trạng thái</th>
+                  <th className="py-2.5 px-2 font-medium">Ngày tạo</th>
+                  <th className="py-2.5 px-3 font-medium text-right">Hành động</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-zinc-800/60">
                 {tasks.map((t) => (
-                  <tr key={t.id} className="hover:bg-slate-800/30 transition-colors group">
-                    <td className="py-3 font-mono text-cyan-400">#{t.id}</td>
-                    <td className="py-3 font-medium text-slate-200">{t.name}</td>
-                    <td className="py-3 text-slate-300">{t.size || "—"} ảnh</td>
-                    <td className="py-3">{getStatusBadge(t.status)}</td>
-                    <td className="py-3 text-slate-400 text-[11px]">
+                  <tr key={t.id} className="group hover:bg-zinc-900/50 transition-colors">
+                    <td className="py-2.5 px-3 font-mono text-zinc-400 tabular-nums">
+                      <span className="text-zinc-600 text-[10px]">#</span>
+                      <span className="font-semibold text-zinc-200">{t.id}</span>
+                    </td>
+                    <td className="py-2.5 px-2 font-medium text-zinc-200">
+                      <span className="truncate group-hover:text-white transition-colors">{t.name}</span>
+                    </td>
+                    <td className="py-2.5 px-2 font-mono tabular-nums">
+                      {t.size !== undefined && t.size !== null ? (
+                        <span className="inline-flex items-center space-x-1.5 text-zinc-300 text-xs">
+                          <ImageIcon className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                          <span className="font-medium text-zinc-200">{t.size}</span>
+                          <span className="text-[11px] text-zinc-500 font-sans">ảnh</span>
+                        </span>
+                      ) : (
+                        <span className="text-zinc-600">—</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-2">{getStatusBadge(t.status)}</td>
+                    <td className="py-2.5 px-2 text-zinc-500 text-[11px] font-mono">
                       {t.created_date ? (
                         <span className="flex items-center space-x-1">
-                          <Clock className="w-3 h-3" />
+                          <Clock className="w-3 h-3 text-zinc-600 shrink-0" />
                           <span>{new Date(t.created_date).toLocaleDateString("vi-VN")}</span>
                         </span>
-                      ) : "—"}
+                      ) : (
+                        "—"
+                      )}
                     </td>
-                    <td className="py-3 text-right">
-                      <div className="flex items-center justify-end space-x-1.5">
-                        {/* Xem trên Web */}
-                        <button
-                          onClick={() => onViewTask && onViewTask(t.id)}
-                          className="py-1 px-2 rounded-lg bg-violet-600/25 hover:bg-violet-600/40 text-violet-300 border border-violet-500/30 font-medium text-[11px] flex items-center space-x-1 transition-colors cursor-pointer"
-                          title="Xem nhãn pre-label trên Web Studio"
-                        >
-                          <Eye className="w-3 h-3" />
-                          <span>Xem Web</span>
-                        </button>
+                    <td className="py-2.5 px-3 text-right">
+                      <div className="flex items-center justify-end space-x-2">
+                        {/* Cụm 3 nút phụ tinh tế: Xem, Metrics, CVAT */}
+                        <div className="inline-flex items-center rounded-lg bg-zinc-950/60 p-0.5 border border-transparent group-hover:border-zinc-800/80 transition-all">
+                          {/* Xem trên Web */}
+                          <button
+                            type="button"
+                            onClick={() => onViewTask && onViewTask(t.id)}
+                            className="h-6.5 px-2 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 flex items-center space-x-1 transition-colors cursor-pointer"
+                            title="Xem nhãn pre-label trên Web Studio"
+                          >
+                            <Eye className="w-3 h-3 text-zinc-400 shrink-0" />
+                            <span>Xem</span>
+                          </button>
 
-                        {/* Mở trên CVAT */}
-                        <a
-                          href={t.cvat_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="py-1 px-2 rounded-lg bg-cyan-600/25 hover:bg-cyan-600/40 text-cyan-300 border border-cyan-500/30 font-medium text-[11px] flex items-center space-x-1 transition-colors"
-                          title="Mở Task trên CVAT để xem hoặc sửa nhãn"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                          <span>Mở CVAT</span>
-                        </a>
+                          {/* Evaluate metrics button */}
+                          <button
+                            type="button"
+                            onClick={() => onEvaluateTask(t.id)}
+                            className="h-6.5 px-2 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 flex items-center space-x-1 transition-colors cursor-pointer"
+                            title="Đo lường sai số và tỷ lệ sửa (QA & Metrics)"
+                          >
+                            <BarChart2 className="w-3 h-3 text-zinc-400 shrink-0" />
+                            <span>Metrics</span>
+                          </button>
 
-                        {/* Evaluate metrics button */}
-                        <button
-                          onClick={() => onEvaluateTask(t.id)}
-                          className="py-1 px-2 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/30 font-medium text-[11px] flex items-center space-x-1 transition-colors cursor-pointer"
-                          title="Đo lường sai số và tỷ lệ sửa"
-                        >
-                          <BarChart2 className="w-3 h-3" />
-                          <span>Metrics</span>
-                        </button>
+                          {/* Mở trên CVAT */}
+                          <a
+                            href={t.cvat_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="h-6.5 px-2 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-850 inline-flex items-center space-x-1 transition-colors"
+                            title="Mở Task trên CVAT để xem hoặc sửa nhãn"
+                          >
+                            <ExternalLink className="w-3 h-3 text-zinc-400 shrink-0" />
+                            <span>CVAT</span>
+                          </a>
+                        </div>
 
-                        {/* Export Retraining Dataset */}
-                        <button
+                        {/* Nút Xuất: Nút hành động chính có điểm nhấn nhẹ dứt khoát */}
+                        <Button
+                          variant="secondary"
+                          size="sm"
                           onClick={() => handleExportRetrain(t.id)}
                           disabled={exportLoading}
-                          className="py-1 px-2 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/30 font-medium text-[11px] flex items-center space-x-1 transition-colors cursor-pointer"
+                          icon={Download}
+                          className="h-7 px-2.5 text-[11px] font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-750/90 shadow-xs group-hover:border-zinc-600 transition-all"
                           title="Xuất dataset chuẩn YOLO Pose để train lại"
                         >
-                          <Download className="w-3 h-3" />
-                          <span>Xuất Retrain</span>
-                        </button>
+                          Xuất
+                        </Button>
                       </div>
                     </td>
                   </tr>

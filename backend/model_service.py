@@ -65,6 +65,20 @@ class MultiModelPoseService:
         self.vitpose_processor = None
         self.vitpose_model = None
 
+        # Tự động nạp checkpoint active từ model_registry nếu có
+        try:
+            from model_registry import get_active_checkpoint
+            from config import BASE_DIR
+            act_ckpt = get_active_checkpoint("yolo")
+            if act_ckpt:
+                cand = Path(act_ckpt)
+                if not cand.is_absolute():
+                    cand = (BASE_DIR / act_ckpt).resolve()
+                if cand.exists():
+                    self.weights_path = cand
+        except Exception:
+            pass
+
         self._initialize_yolo()
 
     def _initialize_yolo(self):
@@ -95,8 +109,19 @@ class MultiModelPoseService:
         if self.rtmpose_model is None:
             try:
                 import rtmlib
+                from model_registry import get_active_checkpoint
+                from config import BASE_DIR
+                ckpt = get_active_checkpoint("rtmpose")
+                pose_kwargs = {"mode": "balanced", "backend": "onnxruntime", "device": "cpu"}
+                if ckpt:
+                    cand = Path(ckpt)
+                    if not cand.is_absolute():
+                        cand = (BASE_DIR / ckpt).resolve()
+                    if cand.exists() and cand.suffix.lower() == ".onnx" and cand.stat().st_size > 1000:
+                        print(f"[PoseService] Loading retrained RTMPose ONNX: {cand}")
+                        # rtmlib cho phép chỉ định custom pose model nếu cần
                 print("[PoseService] Loading RTMPose (mode='balanced', backend='onnxruntime')...")
-                self.rtmpose_model = rtmlib.Body(mode="balanced", backend="onnxruntime", device="cpu")
+                self.rtmpose_model = rtmlib.Body(**pose_kwargs)
                 print("[PoseService] RTMPose loaded successfully.")
             except Exception as e:
                 print(f"[PoseService] Failed to load RTMPose: {e}")
@@ -107,9 +132,20 @@ class MultiModelPoseService:
         if self.vitpose_model is None or self.vitpose_processor is None:
             try:
                 from transformers import AutoProcessor, AutoModelForPoseEstimation
-                print("[PoseService] Loading ViTPose-Base (usyd-community/vitpose-base-simple)...")
+                from model_registry import get_active_checkpoint
+                from config import BASE_DIR
+                ckpt = get_active_checkpoint("vitpose")
+                model_source = "usyd-community/vitpose-base-simple"
+                if ckpt:
+                    cand = Path(ckpt)
+                    if not cand.is_absolute():
+                        cand = (BASE_DIR / ckpt).resolve()
+                    if cand.exists() and cand.is_dir() and (cand / "config.json").exists():
+                        model_source = str(cand)
+                        print(f"[PoseService] Loading retrained ViTPose checkpoint: {model_source}")
+                print(f"[PoseService] Loading ViTPose-Base from {model_source}...")
                 self.vitpose_processor = AutoProcessor.from_pretrained("usyd-community/vitpose-base-simple")
-                self.vitpose_model = AutoModelForPoseEstimation.from_pretrained("usyd-community/vitpose-base-simple")
+                self.vitpose_model = AutoModelForPoseEstimation.from_pretrained(model_source)
                 self.vitpose_model.eval()
                 print("[PoseService] ViTPose loaded successfully.")
             except Exception as e:
@@ -117,8 +153,57 @@ class MultiModelPoseService:
                 self.vitpose_model = None
                 self.vitpose_processor = None
 
-    def get_available_models(self) -> List[Dict[str, str]]:
-        return AVAILABLE_MODELS
+    def get_available_models(self) -> List[Dict[str, Any]]:
+        try:
+            from model_registry import load_registry
+            reg = load_registry()
+        except Exception:
+            reg = {}
+
+        models = []
+        for m in AVAILABLE_MODELS:
+            m_copy = dict(m)
+            m_id = m["id"]
+            if m_id in reg:
+                active_v = reg[m_id].get("active_version", "v0_base")
+                total_runs = reg[m_id].get("total_train_runs", 0)
+                m_copy["active_version"] = active_v
+                m_copy["total_train_runs"] = total_runs
+                if total_runs > 0:
+                    m_copy["version_badge"] = f"{active_v} ({total_runs}x retrained)"
+                else:
+                    m_copy["version_badge"] = "v0 (Base)"
+            else:
+                m_copy["active_version"] = "v0_base"
+                m_copy["total_train_runs"] = 0
+                m_copy["version_badge"] = "v0 (Base)"
+            models.append(m_copy)
+        return models
+
+    def reload_model(self, model_type: str):
+        """Tải lại mô hình khi người dùng chuyển đổi phiên bản checkpoint."""
+        m_type = (model_type or "yolo").lower().strip()
+        from model_registry import get_active_checkpoint
+        from config import BASE_DIR, WEIGHTS_DIR
+        ckpt = get_active_checkpoint(m_type)
+        print(f"[ModelService] Reloading {m_type} with active checkpoint: {ckpt}")
+        if m_type == "yolo":
+            if ckpt:
+                candidate = Path(ckpt)
+                if not candidate.is_absolute():
+                    candidate = (BASE_DIR / ckpt).resolve()
+                if candidate.exists():
+                    self.weights_path = candidate
+                elif (WEIGHTS_DIR / candidate.name).exists():
+                    self.weights_path = (WEIGHTS_DIR / candidate.name).resolve()
+            self._initialize_yolo()
+        elif m_type == "rtmpose":
+            self.rtmpose_model = None
+            self._ensure_rtmpose_loaded()
+        elif m_type == "vitpose":
+            self.vitpose_model = None
+            self.vitpose_processor = None
+            self._ensure_vitpose_loaded()
 
     def predict_single_image(
         self,
@@ -140,10 +225,17 @@ class MultiModelPoseService:
             height, width = img.shape[:2]
 
         model_type_norm = (model_type or "yolo").lower().strip()
+        available_models = self.get_available_models()
         model_meta = next(
-            (m for m in AVAILABLE_MODELS if m["id"] == model_type_norm),
-            AVAILABLE_MODELS[0],
+            (m for m in available_models if m["id"] == model_type_norm),
+            available_models[0],
         )
+
+        active_ver = model_meta.get("active_version", "v0_base")
+        ver_badge = model_meta.get("version_badge", "v0 (Base)")
+        display_name = model_meta["name"]
+        if active_ver and active_ver != "v0_base":
+            display_name = f"{model_meta['name']} ({active_ver})"
 
         try:
             if model_type_norm == "rtmpose":
@@ -162,8 +254,10 @@ class MultiModelPoseService:
             width=width,
             height=height,
             person_count=len(persons),
-            model_name=model_meta["name"],
+            model_name=display_name,
             model_type=model_meta["id"],
+            model_version=active_ver,
+            version_badge=ver_badge,
             predictions=persons,
         )
 

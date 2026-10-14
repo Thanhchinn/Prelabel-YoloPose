@@ -126,6 +126,10 @@ export const api = {
     return res.json();
   },
 
+  async evaluateTask(taskId = 1, modelType = "yolo") {
+    return this.evaluateMetrics(taskId, modelType);
+  },
+
   async exportDataset(taskId = 1, datasetName = "yolo26_dataset", valRatio = 0.2) {
     const res = await fetch(`${API_BASE}/dataset/export`, {
       method: "POST",
@@ -137,6 +141,95 @@ export const api = {
       }),
     });
     if (!res.ok) throw new Error("Dataset export failed");
+    return res.json();
+  },
+
+  // Hardware Telemetry
+  async getHardwareStatus() {
+    const res = await fetch(`${API_BASE}/hardware/status`);
+    if (!res.ok) throw new Error("Không thể lấy thông tin phần cứng");
+    return res.json();
+  },
+
+  // Dataset Hub & Merger
+  async uploadGroundTruthZip(file, alias = "custom_gt") {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("alias", alias);
+    const res = await fetch(`${API_BASE}/dataset/upload-gt`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Tải lên Ground Truth thất bại");
+    }
+    return res.json();
+  },
+
+  async mergeDatasets(payload) {
+    const res = await fetch(`${API_BASE}/dataset/merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Hợp nhất dataset thất bại");
+    }
+    return res.json();
+  },
+
+  async listDatasets() {
+    const res = await fetch(`${API_BASE}/dataset/list`);
+    if (!res.ok) throw new Error("Không thể lấy danh sách dataset");
+    return res.json();
+  },
+
+  // Multi-Model Training Engine
+  async startTraining(payload) {
+    const res = await fetch(`${API_BASE}/training/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Khởi chạy huấn luyện thất bại");
+    }
+    return res.json();
+  },
+
+  async getTrainingStatus() {
+    const res = await fetch(`${API_BASE}/training/status`);
+    if (!res.ok) throw new Error("Không thể lấy trạng thái huấn luyện");
+    return res.json();
+  },
+
+  async stopTraining() {
+    const res = await fetch(`${API_BASE}/training/stop`, {
+      method: "POST",
+    });
+    return res.json();
+  },
+
+  // Model Registry & Lineage
+  async getModelRegistry() {
+    const res = await fetch(`${API_BASE}/models/registry`);
+    if (!res.ok) throw new Error("Không thể đọc Model Registry");
+    return res.json();
+  },
+
+  async setActiveModelVersion(modelType, versionId) {
+    const res = await fetch(`${API_BASE}/models/set-active`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model_type: modelType, version_id: versionId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Kích hoạt phiên bản thất bại");
+    }
     return res.json();
   },
 };

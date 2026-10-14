@@ -23,6 +23,8 @@ class ImagePredictionResult(BaseModel):
     person_count: int
     model_name: Optional[str] = "YOLO 26 Pose"
     model_type: Optional[str] = "yolo"
+    model_version: Optional[str] = "v0_base"
+    version_badge: Optional[str] = "v0 (Base)"
     predictions: List[PersonPose]
 
 class BatchPredictResponse(BaseModel):
@@ -44,6 +46,9 @@ class ModelInfo(BaseModel):
     ap_score: str
     badge: str
     description: str
+    active_version: Optional[str] = "v0_base"
+    total_train_runs: Optional[int] = 0
+    version_badge: Optional[str] = "v0 (Base)"
 
 class CVATTaskCreateRequest(BaseModel):
     task_name: str
@@ -110,4 +115,63 @@ class CVATConfigResponse(BaseModel):
     server_online: bool
     server_version: Optional[str] = None
     last_error: Optional[str] = None
+
+class HardwareStatusResponse(BaseModel):
+    cuda_available: bool
+    device: str
+    device_name: str
+    vram_gb: float
+    has_nvidia_gpu: bool
+    nvidia_gpu_name: Optional[str] = None
+    nvidia_smi_vram_gb: float
+    tier: str
+    cuda_torch_installed: bool
+    recommendations: Dict[str, Any]
+
+class DatasetMergeRequest(BaseModel):
+    dataset_name: str = "merged_dataset"
+    cvat_task_ids: List[int] = []
+    external_aliases: List[str] = []
+    val_ratio: float = 0.2
+
+class DatasetMergeResponse(BaseModel):
+    success: bool
+    dataset_name: str
+    dataset_path: str
+    yaml_path: str
+    total_samples: int
+    train_samples: int
+    val_samples: int
+    sources: List[str]
+    message: str
+
+class TrainStartRequest(BaseModel):
+    model_type: str = "yolo"
+    dataset_name: str
+    epochs: int = 20
+    batch_size: Optional[int] = None
+    imgsz: Optional[int] = None
+    preset: Optional[str] = "fast"
+
+class TrainStatusResponse(BaseModel):
+    status: str
+    model_type: str
+    dataset_name: str
+    current_epoch: int
+    total_epochs: int
+    progress_percent: float
+    current_loss: float
+    loss_history: List[Dict[str, Any]]
+    logs: List[str]
+    eta_seconds: int
+    error_message: Optional[str] = None
+    result_version: Optional[str] = None
+    pre_metrics: Dict[str, Any]
+    post_metrics: Dict[str, Any]
+    delta: Dict[str, Any]
+
+class SetActiveVersionRequest(BaseModel):
+    model_type: str
+    version_id: str
+
 

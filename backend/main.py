@@ -25,13 +25,19 @@ from schemas import (
     MetricsRequest, MetricsResponse,
     RetrainExportRequest, RetrainExportResponse,
     WorkspaceResetRequest,
-    CVATConfigRequest, CVATConfigResponse
+    CVATConfigRequest, CVATConfigResponse,
+    HardwareStatusResponse, DatasetMergeRequest, DatasetMergeResponse,
+    TrainStartRequest, TrainStatusResponse, SetActiveVersionRequest
 )
 from model_service import model_service
 from converter import AnnotationConverter
 from cvat_client import cvat_client
 from metrics import MetricsCalculator
 from train_yolo26 import export_dataset_from_cvat
+from hardware_adapter import get_hardware_info
+from model_registry import load_registry, set_active_version, get_active_checkpoint
+from dataset_hub import extract_and_ingest_zip, merge_datasets, list_available_datasets, list_external_datasets
+from train_engine import start_training_async, train_state
 
 app = FastAPI(
     title="PosePreLabel AI Engine (YOLO 26 + CVAT)",
@@ -667,3 +673,101 @@ def export_dataset(request: RetrainExportRequest):
         raise HTTPException(status_code=400, detail=res.get("message"))
 
     return RetrainExportResponse(**res)
+
+# ==========================================
+# MULTI-MODEL ACTIVE LEARNING & RETRAIN HUB
+# ==========================================
+
+@app.get("/api/hardware/status", response_model=HardwareStatusResponse)
+def get_hardware_telemetry():
+    """Lấy thông tin card đồ họa (GPU/CPU) và đề xuất tham số huấn luyện an toàn."""
+    info = get_hardware_info()
+    return HardwareStatusResponse(**info)
+
+@app.post("/api/dataset/upload-gt")
+async def upload_groundtruth_zip(file: UploadFile = File(...), alias: str = Form("custom_gt")):
+    """Tải lên file ZIP chứa Ground Truth có sẵn từ bên ngoài."""
+    import time
+    temp_zip = DATASET_DIR / f"temp_{int(time.time())}_{file.filename}"
+    try:
+        with open(temp_zip, "wb") as f_out:
+            shutil.copyfileobj(file.file, f_out)
+
+        res = extract_and_ingest_zip(temp_zip, dataset_alias=alias)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi nạp Ground Truth: {e}")
+    finally:
+        if temp_zip.exists():
+            temp_zip.unlink(missing_ok=True)
+
+@app.post("/api/dataset/merge", response_model=DatasetMergeResponse)
+def merge_training_datasets(request: DatasetMergeRequest):
+    """Hợp nhất nhãn Ground Truth CVAT + Ground Truth ngoài với SHA-256 deduplication."""
+    res = merge_datasets(
+        dataset_name=request.dataset_name,
+        cvat_task_ids=request.cvat_task_ids,
+        external_aliases=request.external_aliases,
+        val_ratio=request.val_ratio
+    )
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    return DatasetMergeResponse(**res)
+
+@app.get("/api/dataset/list")
+def get_datasets_and_external():
+    """Liệt kê danh sách các dataset sẵn sàng huấn luyện và Ground Truth ngoài."""
+    available = list_available_datasets()
+    external = list_external_datasets()
+    return {
+        "datasets": available,
+        "external_groundtruth": external
+    }
+
+@app.post("/api/training/start")
+def start_model_training(request: TrainStartRequest):
+    """Khởi động tiến trình huấn luyện cho mô hình được chọn (YOLO, RTMPose, hoặc ViTPose)."""
+    res = start_training_async(
+        model_type=request.model_type,
+        dataset_name=request.dataset_name,
+        epochs=request.epochs,
+        batch_size=request.batch_size,
+        imgsz=request.imgsz,
+        preset=request.preset or "fast"
+    )
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    return res
+
+@app.get("/api/training/status", response_model=TrainStatusResponse)
+def get_current_training_status():
+    """Lấy tiến trình huấn luyện Realtime (Epoch, Loss, ETA, Logs, Pre/Post Metrics)."""
+    snap = train_state.get_snapshot()
+    return TrainStatusResponse(**snap)
+
+@app.post("/api/training/stop")
+def stop_current_training():
+    """Gửi yêu cầu dừng phiên huấn luyện hiện tại."""
+    train_state.request_stop()
+    return {"success": True, "message": "Đã gửi tín hiệu dừng huấn luyện."}
+
+@app.get("/api/models/registry")
+def get_models_registry():
+    """Lấy danh sách các phiên bản (v0, v1, v2...), số lần train, và chỉ số Before/After."""
+    return load_registry()
+
+@app.post("/api/models/set-active")
+def switch_active_model_version(request: SetActiveVersionRequest):
+    """Chuyển đổi phiên bản mô hình đang phục vụ trên Web Studio (v0, v1, v2...)."""
+    res = set_active_version(request.model_type, request.version_id)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("message"))
+
+    # Nạp lại checkpoint mới vào runtime memory
+    try:
+        model_service.reload_model(request.model_type)
+    except Exception as e:
+        print(f"[Main] Reload model error: {e}")
+
+    return res
+
