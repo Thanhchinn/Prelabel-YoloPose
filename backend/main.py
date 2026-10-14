@@ -24,7 +24,8 @@ from schemas import (
     CVATTaskCreateRequest, CVATTaskResponse,
     MetricsRequest, MetricsResponse,
     RetrainExportRequest, RetrainExportResponse,
-    WorkspaceResetRequest
+    WorkspaceResetRequest,
+    CVATConfigRequest, CVATConfigResponse
 )
 from model_service import model_service
 from converter import AnnotationConverter
@@ -54,6 +55,11 @@ app.mount("/api/images/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="u
 def health_check():
     """Kiểm tra sức khỏe hệ thống: Backend, Model YOLO 26, và CVAT Local."""
     cvat_status = cvat_client.check_connection()
+    is_online = cvat_status.get("online", False)
+    is_auth = cvat_client.is_authenticated
+    if is_online and not is_auth:
+        is_auth = cvat_client.authenticate()
+
     return {
         "backend": "online",
         "yolo26_model": {
@@ -63,11 +69,45 @@ def health_check():
             "mode": "Live Model" if model_service.is_loaded else "Simulation / Ready for Weights"
         },
         "cvat_local": {
-            "host": CVAT_HOST,
-            "online": cvat_status.get("online", False),
+            "host": cvat_client.host,
+            "username": cvat_client.username,
+            "authenticated": is_auth,
+            "online": is_online,
+            "version": cvat_client.server_version,
+            "last_error": cvat_client.last_error,
             "details": cvat_status.get("details") or cvat_status.get("error")
         }
     }
+
+@app.get("/api/cvat/config", response_model=CVATConfigResponse)
+def get_cvat_config():
+    """Lấy thông tin cấu hình và trạng thái kết nối tài khoản CVAT hiện tại."""
+    conn = cvat_client.check_connection()
+    is_auth = cvat_client.is_authenticated
+    if conn.get("online") and not is_auth:
+        is_auth = cvat_client.authenticate()
+
+    return CVATConfigResponse(
+        host=cvat_client.host,
+        username=cvat_client.username,
+        is_authenticated=is_auth,
+        server_online=conn.get("online", False),
+        server_version=cvat_client.server_version,
+        last_error=cvat_client.last_error
+    )
+
+@app.post("/api/cvat/config")
+def update_cvat_config(req: CVATConfigRequest):
+    """Kiểm tra và cập nhật tài khoản / mật khẩu CVAT Local (lưu vĩnh viễn vào .env)."""
+    if not req.username or not req.username.strip():
+        raise HTTPException(status_code=400, detail="Vui lòng nhập tên tài khoản CVAT.")
+    if not req.password or not req.password.strip():
+        raise HTTPException(status_code=400, detail="Vui lòng nhập mật khẩu CVAT.")
+
+    res = cvat_client.test_and_apply(req.host, req.username, req.password)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    return res
 
 @app.get("/api/config")
 def get_system_config():
@@ -77,7 +117,7 @@ def get_system_config():
         "skeleton_edges": COCO_SKELETON_EDGES,
         "default_conf": CONF_THRESHOLD,
         "default_kpt_conf": KPT_CONF_THRESHOLD,
-        "cvat_host": CVAT_HOST
+        "cvat_host": cvat_client.host
     }
 
 @app.get("/api/models", response_model=List[ModelInfo])
@@ -296,28 +336,33 @@ def sync_to_cvat(request: CVATTaskCreateRequest):
     cvat_task_name = f"{PLS_TASK_PREFIX}{request.task_name}"
     task_id = cvat_client.create_task(cvat_task_name)
     if not task_id:
-        # Nếu CVAT Local chưa chạy, trả về phản hồi mô phỏng kèm hướng dẫn rõ ràng
-        simulated_id = 101
-        cvat_task_url = f"{CVAT_HOST}/tasks/{simulated_id}"
-        return CVATTaskResponse(
-            task_id=simulated_id,
-            task_name=request.task_name,
-            cvat_url=cvat_task_url,
-            image_count=len(img_paths),
-            status="simulated",
-            message="CVAT Local hiện chưa được bật tại " + CVAT_HOST + ". Dữ liệu pre-label đã sẵn sàng trong data/outputs để đồng bộ khi CVAT khởi động."
-        )
+        # Kiểm tra chi tiết nguyên nhân thất bại để báo lỗi chuẩn xác cho người dùng
+        conn = cvat_client.check_connection()
+        if not conn.get("online"):
+            raise HTTPException(
+                status_code=503,
+                detail=f"Không thể kết nối đến máy chủ CVAT tại '{cvat_client.host}'. Vui lòng kiểm tra Docker CVAT đã bật chưa hoặc bấm 'Cài đặt CVAT' để sửa URL."
+            )
+        if not cvat_client.is_authenticated:
+            raise HTTPException(
+                status_code=401,
+                detail=f"Xác thực CVAT thất bại với tài khoản '{cvat_client.username}': {cvat_client.last_error or 'Sai tài khoản hoặc mật khẩu'}. Vui lòng bấm biểu tượng 'Cài đặt CVAT' ở góc trên để cấu hình tài khoản của bạn."
+            )
+        err = cvat_client.last_error or "Không rõ nguyên nhân."
+        raise HTTPException(status_code=500, detail=f"Không thể tạo Task trên CVAT: {err}")
 
     # 3. Upload ảnh lên Task CVAT
     upload_ok = cvat_client.upload_task_data(task_id, img_paths)
     if not upload_ok:
-        raise HTTPException(status_code=500, detail="Không thể tải ảnh lên Task CVAT.")
+        err = cvat_client.last_error or "CVAT import ảnh thất bại hoặc quá thời gian chờ."
+        raise HTTPException(status_code=500, detail=f"Không thể tải {len(img_paths)} ảnh lên Task CVAT #{task_id}: {err}")
 
     # 4. Nếu có yêu cầu pre-label, chuyển đổi và đẩy nhãn lên CVAT theo mô hình được chọn
     target_model_type = (request.model_type or "yolo").lower().strip()
     available_models = model_service.get_available_models()
     model_meta = next((m for m in available_models if m["id"] == target_model_type), available_models[0])
     model_display_name = model_meta.get("name", "AI Pose")
+    anno_status_note = ""
 
     if request.include_prelabels:
         import json
@@ -347,16 +392,18 @@ def sync_to_cvat(request: CVATTaskCreateRequest):
         cvat_anno_payload = AnnotationConverter.to_cvat_annotations_json(
             predictions_list, task_frame_map, label_id_map=label_id_map
         )
-        cvat_client.upload_annotations(task_id, cvat_anno_payload)
+        anno_ok = cvat_client.upload_annotations(task_id, cvat_anno_payload)
+        if not anno_ok:
+            anno_status_note = f" (Cảnh báo: Nạp nhãn gặp lỗi: {cvat_client.last_error})"
 
-    cvat_task_url = f"{CVAT_HOST}/tasks/{task_id}"
+    cvat_task_url = f"{cvat_client.host}/tasks/{task_id}"
     return CVATTaskResponse(
         task_id=task_id,
         task_name=request.task_name,
         cvat_url=cvat_task_url,
         image_count=len(img_paths),
         status="success",
-        message=f"Đã tạo thành công Task '{request.task_name}' trên CVAT Local với {len(img_paths)} ảnh kèm bộ xương 17 điểm ({model_display_name})."
+        message=f"Đã tạo thành công Task '{request.task_name}' trên CVAT với {len(img_paths)} ảnh kèm bộ xương 17 điểm ({model_display_name}).{anno_status_note}"
     )
 
 @app.get("/api/cvat/tasks")
@@ -388,8 +435,8 @@ def list_cvat_tasks(filter: str = "studio"):
             "size": t.get("size", 0),
             "created_date": t.get("created_date", ""),
             "updated_date": t.get("updated_date", ""),
-            "cvat_url": f"{CVAT_HOST}/tasks/{t.get('id')}",
-            "cvat_job_url": f"{CVAT_HOST}/tasks/{t.get('id')}/jobs",
+            "cvat_url": f"{cvat_client.host}/tasks/{t.get('id')}",
+            "cvat_job_url": f"{cvat_client.host}/tasks/{t.get('id')}/jobs",
         })
     return {"tasks": tasks}
 

@@ -4,6 +4,7 @@ import StudioView from "./views/StudioView";
 import CVATSyncView from "./views/CVATSyncView";
 import AnalyticsView from "./views/AnalyticsView";
 import ModelBenchmarkView from "./views/ModelBenchmarkView";
+import CVATConfigModal from "./components/common/CVATConfigModal";
 import { api } from "./services/api";
 
 export default function App() {
@@ -11,6 +12,7 @@ export default function App() {
   const [health, setHealth] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [targetTaskId, setTargetTaskId] = useState(101);
+  const [isCVATConfigOpen, setIsCVATConfigOpen] = useState(false);
 
   // Task ID to view in Studio (when clicking "Xem Web" from CVAT Hub)
   const [viewTaskId, setViewTaskId] = useState(null);
@@ -101,6 +103,7 @@ export default function App() {
       isRefreshing={isRefreshing}
       selectedModelType={selectedModelType}
       availableModels={availableModels}
+      onOpenCVATConfig={() => setIsCVATConfigOpen(true)}
     >
       {activeTab === "studio" && (
         <StudioView
@@ -119,6 +122,8 @@ export default function App() {
           selectedModelType={selectedModelType}
           onSelectModelType={setSelectedModelType}
           availableModels={availableModels}
+          health={health}
+          onOpenCVATConfig={() => setIsCVATConfigOpen(true)}
         />
       )}
       {activeTab === "analytics" && (
@@ -135,6 +140,13 @@ export default function App() {
           onSelectModelType={setSelectedModelType}
         />
       )}
+
+      {/* CVAT Settings Modal */}
+      <CVATConfigModal
+        isOpen={isCVATConfigOpen}
+        onClose={() => setIsCVATConfigOpen(false)}
+        onConfigSaved={fetchHealth}
+      />
     </MainLayout>
   );
 }

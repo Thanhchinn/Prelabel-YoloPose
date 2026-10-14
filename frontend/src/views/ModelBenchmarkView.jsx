@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Cpu, Zap, Trophy, ShieldCheck, Play, Loader2, CheckCircle2, ArrowRight, Gauge, Layers, Sparkles, Activity } from "lucide-react";
+import { Cpu, Zap, Trophy, ShieldCheck, Play, Loader2, CheckCircle2, ArrowRight, Gauge, Layers, Sparkles, Activity, Image as ImageIcon } from "lucide-react";
 import { api } from "../services/api";
 
 export default function ModelBenchmarkView({ onNavigateToStudio, onSelectModelType, selectedModelType = "yolo" }) {
@@ -291,39 +291,48 @@ export default function ModelBenchmarkView({ onNavigateToStudio, onSelectModelTy
       </div>
 
       {/* Live Benchmark Playground (Thử nghiệm 1-Click) */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 relative overflow-hidden">
+        {/* Subtle accent line */}
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-cyan-500 via-indigo-500 to-purple-500" />
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center space-x-2 text-xs font-semibold text-slate-200">
-              <Gauge className="w-4 h-4 text-cyan-400" />
-              <span>Playground: Chạy Đo Lường Đối Chiếu 3 Model Trên Cùng 1 Ảnh</span>
+              <div className="w-6 h-6 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                <Gauge className="w-3.5 h-3.5" />
+              </div>
+              <span className="text-sm font-bold text-slate-100">Playground: Chạy Đo Lường Đối Chiếu 3 Model Trên Cùng 1 Ảnh</span>
             </div>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-xs text-slate-400 pl-8">
               Hệ thống sẽ chạy đồng thời cả 3 mô hình trên cùng bức ảnh để đo lường độ trễ thực tế, số người phát hiện và độ tin cậy.
             </p>
           </div>
 
-          <div className="flex items-center space-x-2">
-            {images.length > 0 ? (
-              <select
-                value={selectedImageName}
-                onChange={(e) => setSelectedImageName(e.target.value)}
-                className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 outline-none cursor-pointer focus:border-cyan-500"
-              >
-                {images.map((img) => (
-                  <option key={img.name} value={img.name}>
-                    {img.name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="text-xs text-slate-500">Chưa có ảnh trong uploads</span>
-            )}
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 bg-slate-950/80 border border-slate-800/90 p-1.5 rounded-2xl shadow-inner shrink-0 self-start lg:self-auto">
+            <div className="flex items-center space-x-2 px-2.5 min-w-0">
+              <ImageIcon className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider shrink-0">Ảnh test:</span>
+              {images.length > 0 ? (
+                <select
+                  value={selectedImageName}
+                  onChange={(e) => setSelectedImageName(e.target.value)}
+                  className="bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 outline-none cursor-pointer focus:border-cyan-500 max-w-[210px] truncate font-mono shadow-inner"
+                >
+                  {images.map((img) => (
+                    <option key={img.name} value={img.name}>
+                      {img.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-xs text-slate-500 italic">Chưa có ảnh trong uploads</span>
+              )}
+            </div>
 
             <button
               onClick={handleRunSideBySideBenchmark}
               disabled={isRunningBenchmark || images.length === 0}
-              className="px-4 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white shadow-md shadow-cyan-500/20 flex items-center space-x-1.5 transition-all disabled:opacity-50 cursor-pointer active:scale-95 shrink-0"
+              className="px-4 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white shadow-md shadow-cyan-500/25 flex items-center space-x-1.5 transition-all disabled:opacity-50 cursor-pointer active:scale-95 shrink-0"
             >
               {isRunningBenchmark ? (
                 <>

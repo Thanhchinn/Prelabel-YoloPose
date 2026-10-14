@@ -10,6 +10,7 @@ export default function MainLayout({
   isRefreshing,
   selectedModelType = "yolo",
   availableModels = [],
+  onOpenCVATConfig,
   children,
 }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -63,6 +64,7 @@ export default function MainLayout({
           selectedModelType={selectedModelType}
           isSidebarCollapsed={isSidebarCollapsed}
           onToggleSidebar={toggleSidebar}
+          onOpenCVATConfig={onOpenCVATConfig}
         />
 
 

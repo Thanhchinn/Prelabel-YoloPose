@@ -77,6 +77,25 @@ export const api = {
     return res.json();
   },
 
+  async getCVATConfig() {
+    const res = await fetch(`${API_BASE}/cvat/config`);
+    if (!res.ok) throw new Error("Failed to fetch CVAT config");
+    return res.json();
+  },
+
+  async updateCVATConfig(payload) {
+    const res = await fetch(`${API_BASE}/cvat/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.detail || data.message || "Cập nhật cấu hình CVAT thất bại");
+    }
+    return data;
+  },
+
   async listCVATTasks(filter = "studio") {
     const res = await fetch(`${API_BASE}/cvat/tasks?filter=${filter}`);
     if (!res.ok) throw new Error("Failed to fetch CVAT tasks");

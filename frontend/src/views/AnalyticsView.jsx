@@ -78,26 +78,27 @@ export default function AnalyticsView({
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-2 border-b border-slate-800/80">
         <div>
           <h2 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
             <BarChart3 className="w-5 h-5 text-cyan-400" />
             <span>Báo cáo Đo lường Chất lượng & Công sức Gán nhãn (QA)</span>
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            So sánh dự đoán của <span className="text-cyan-300 font-semibold">{metrics?.model_name || "Mô hình AI"}</span> vs. nhãn Ground Truth trên CVAT → tính PCK, NME, Human Correction Rate.
+            So sánh dự đoán của <span className="text-cyan-300 font-semibold">{metrics?.model_name || (modelType === "vitpose" ? "ViTPose-Base (Vision Transformer)" : modelType === "rtmpose" ? "RTMPose-m (OpenMMLab)" : "YOLO 26 Pose")}</span> vs. nhãn Ground Truth trên CVAT → tính PCK, NME, Human Correction Rate.
           </p>
         </div>
 
-        {/* Task & Model Selectors */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center space-x-1.5">
-            <span className="text-xs text-slate-400 font-medium">Task:</span>
+        {/* Unified Control Toolbar (Task + Model + Refresh) */}
+        <div className="flex items-center flex-nowrap gap-2 bg-slate-900 border border-slate-800/90 p-1.5 rounded-2xl shadow-sm shrink-0 self-start lg:self-auto">
+          {/* Task Selector */}
+          <div className="flex items-center space-x-1.5 px-2">
+            <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Task:</span>
             {cvatTasks.length > 0 ? (
               <select
                 value={taskId}
                 onChange={(e) => setTaskId(parseInt(e.target.value))}
-                className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 outline-none cursor-pointer focus:border-cyan-500"
+                className="bg-slate-950 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 outline-none cursor-pointer focus:border-cyan-500 max-w-[170px] truncate font-mono shadow-inner"
               >
                 {cvatTasks.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -110,38 +111,38 @@ export default function AnalyticsView({
                 type="number"
                 value={taskId}
                 onChange={(e) => setTaskId(parseInt(e.target.value) || 1)}
-                className="w-20 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none"
+                className="w-20 bg-slate-950 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 outline-none font-mono"
                 placeholder="Task ID"
               />
             )}
           </div>
 
-          <div className="flex items-center space-x-1.5">
-            <span className="text-xs text-slate-400 font-medium">Model:</span>
+          <div className="h-5 w-[1px] bg-slate-800" />
+
+          {/* Model Selector */}
+          <div className="flex items-center space-x-1.5 px-2">
+            <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Model:</span>
             <select
               value={modelType}
               onChange={(e) => setModelType(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 outline-none cursor-pointer focus:border-cyan-500"
+              className="bg-slate-950 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 outline-none cursor-pointer focus:border-cyan-500 max-w-[190px] truncate shadow-inner"
             >
-              {(availableModels.length > 0 ? availableModels : [
-                { id: "yolo", name: "YOLO 26 Pose" },
-                { id: "rtmpose", name: "RTMPose-m (OpenMMLab)" },
-                { id: "vitpose", name: "ViTPose-Base (Transformer)" },
-              ]).map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
+              <option value="yolo">⚡ YOLO 26 Pose</option>
+              <option value="rtmpose">🚀 RTMPose-m (SOTA)</option>
+              <option value="vitpose">🧠 ViTPose-Base (ViT)</option>
             </select>
           </div>
 
+          <div className="h-5 w-[1px] bg-slate-800" />
+
+          {/* Refresh Action */}
           <button
             onClick={() => loadMetrics(taskId, modelType)}
             disabled={loading}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer transition-colors"
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-400 cursor-pointer transition-colors shrink-0 active:scale-95"
             title="Làm mới đối chiếu"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-cyan-400" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-cyan-400" : ""}`} />
           </button>
         </div>
       </div>

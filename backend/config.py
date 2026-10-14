@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -25,6 +26,56 @@ PORT = int(os.getenv("PORT", "8000"))
 CVAT_HOST = os.getenv("CVAT_HOST", "http://localhost:8080").rstrip("/")
 CVAT_USER = os.getenv("CVAT_USER", "admin")
 CVAT_PASS = os.getenv("CVAT_PASS", "admin12345")
+
+def update_cvat_env(host: str, username: str, password: Optional[str] = None):
+    """Cập nhật biến cấu hình CVAT runtime và ghi đè vào file .env để lưu vĩnh viễn."""
+    global CVAT_HOST, CVAT_USER, CVAT_PASS
+    CVAT_HOST = host.rstrip("/")
+    CVAT_USER = username
+    if password is not None:
+        CVAT_PASS = password
+
+    os.environ["CVAT_HOST"] = CVAT_HOST
+    os.environ["CVAT_USER"] = CVAT_USER
+    if password is not None:
+        os.environ["CVAT_PASS"] = CVAT_PASS
+
+    env_file = BASE_DIR / ".env"
+    lines = []
+    found_host = False
+    found_user = False
+    found_pass = False
+
+    if env_file.exists():
+        with open(env_file, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("CVAT_HOST="):
+                    lines.append(f"CVAT_HOST={CVAT_HOST}\n")
+                    found_host = True
+                elif line.startswith("CVAT_USER="):
+                    lines.append(f"CVAT_USER={CVAT_USER}\n")
+                    found_user = True
+                elif line.startswith("CVAT_PASS="):
+                    if password is not None:
+                        lines.append(f"CVAT_PASS={CVAT_PASS}\n")
+                    else:
+                        lines.append(line)
+                    found_pass = True
+                else:
+                    lines.append(line)
+
+    if not found_host:
+        lines.append(f"CVAT_HOST={CVAT_HOST}\n")
+    if not found_user:
+        lines.append(f"CVAT_USER={CVAT_USER}\n")
+    if not found_pass and password is not None:
+        lines.append(f"CVAT_PASS={CVAT_PASS}\n")
+
+    try:
+        with open(env_file, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+    except Exception as e:
+        print(f"[Config] Failed to persist .env: {e}")
 
 # Cấu hình Model YOLO 26 Pose
 raw_weights = os.getenv("MODEL_WEIGHTS_PATH", "backend/weights/yolo26-pose.pt")

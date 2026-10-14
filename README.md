@@ -46,10 +46,14 @@ Chạy script tự động tải sẵn toàn bộ checkpoints của 3 mô hình 
 python backend/download_models.py
 ```
 
-### 3. Thiết lập biến môi trường
-```bash
-cp .env.example .env   # (hoặc copy .env.example thành .env trên Windows)
-```
+### 3. Cấu hình tài khoản & máy chủ CVAT Local
+* **Cách 1 (Khuyên dùng - Nhanh nhất)**: Sau khi bật Web Studio, bấm trực tiếp vào biểu tượng **`⚙️ Cài đặt CVAT`** ở thanh Header hoặc trong tab **CVAT Task Hub** để nhập tài khoản/mật khẩu CVAT của máy bạn. Hệ thống sẽ tự động kiểm tra kết nối và lưu vĩnh viễn vào `.env`!
+* **Cách 2**: Copy file `.env.example` thành `.env` và điền tài khoản:
+  ```env
+  CVAT_HOST=http://localhost:8080
+  CVAT_USER=ten_tai_khoan_cvat_cua_ban
+  CVAT_PASS=mat_khau_cvat_cua_ban
+  ```
 
 ### 4. Khởi động Backend (FastAPI)
 ```bash

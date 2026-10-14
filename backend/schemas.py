@@ -97,3 +97,17 @@ class WorkspaceResetRequest(BaseModel):
     is_viewing_task: bool = False
     task_id: Optional[int] = None
     task_name: Optional[str] = None
+
+class CVATConfigRequest(BaseModel):
+    host: str = "http://localhost:8080"
+    username: str
+    password: Optional[str] = None
+
+class CVATConfigResponse(BaseModel):
+    host: str
+    username: str
+    is_authenticated: bool
+    server_online: bool
+    server_version: Optional[str] = None
+    last_error: Optional[str] = None
+

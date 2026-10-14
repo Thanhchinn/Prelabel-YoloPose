@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Layers, ExternalLink, RefreshCw, CheckCircle2, Download, BarChart2, Loader2, Eye, Clock, ImageIcon } from "lucide-react";
+import { Layers, ExternalLink, RefreshCw, CheckCircle2, Download, BarChart2, Loader2, Eye, Clock, ImageIcon, FolderPlus, Sparkles, Zap, Check, Settings, AlertCircle } from "lucide-react";
 import { api } from "../services/api";
 
 export default function CVATSyncView({
@@ -8,6 +8,8 @@ export default function CVATSyncView({
   selectedModelType = "yolo",
   onSelectModelType,
   availableModels = [],
+  health,
+  onOpenCVATConfig,
 }) {
   const [taskName, setTaskName] = useState("");
   const [includePrelabels, setIncludePrelabels] = useState(true);
@@ -18,7 +20,7 @@ export default function CVATSyncView({
 
   const activeModelObj = availableModels.find((m) => m.id === selectedModelType) || {
     name: "YOLO 26 Pose",
-    badge: "YOLO 26",
+    badge: "Fast",
   };
 
   // Task list state - giờ tải từ CVAT thật
@@ -127,55 +129,110 @@ export default function CVATSyncView({
     );
   };
 
+  const formatModelOptionLabel = (m) => {
+    if (m.id === "yolo") return `⚡ ${m.name} — Siêu nhanh (~20ms)`;
+    if (m.id === "rtmpose") return `🚀 ${m.name} — Cân bằng (75.8 mAP)`;
+    if (m.id === "vitpose") return `🧠 ${m.name} — Chuẩn xác cao (77.4+ mAP)`;
+    return `${m.name}`;
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Title */}
-      <div>
-        <h2 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
-          <Layers className="w-5 h-5 text-cyan-400" />
-          <span>Trung tâm đồng bộ CVAT Local & Active Learning</span>
-        </h2>
-        <p className="text-xs text-slate-400 mt-1">
-          Tạo task trên CVAT với skeleton 17 điểm COCO, nạp nhãn pre-label từ AI Engine đa mô hình và xuất dataset để huấn luyện lại.
-          <span className="text-cyan-400 ml-1 font-medium">Chỉ hiển thị task được tạo từ Web Studio.</span>
-        </p>
+      {/* Title + Quick Settings Trigger */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-slate-100 flex items-center space-x-2">
+            <Layers className="w-5 h-5 text-cyan-400" />
+            <span>Trung tâm đồng bộ CVAT Local & Active Learning</span>
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">
+            Tạo task trên CVAT với skeleton 17 điểm COCO, nạp nhãn pre-label từ AI Engine đa mô hình và xuất dataset để huấn luyện lại.
+            <span className="text-cyan-400 ml-1 font-medium">Chỉ hiển thị task được tạo từ Web Studio.</span>
+          </p>
+        </div>
+
+        {onOpenCVATConfig && (
+          <button
+            type="button"
+            onClick={onOpenCVATConfig}
+            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700/80 text-xs font-semibold transition-all cursor-pointer shadow-sm shrink-0 self-start sm:self-auto hover:border-cyan-500/50"
+            title="Cấu hình tài khoản & máy chủ CVAT"
+          >
+            <Settings className="w-4 h-4 text-cyan-400" />
+            <span>Cài đặt tài khoản CVAT</span>
+          </button>
+        )}
       </div>
 
+      {/* Unauthenticated Alert for Teammates */}
+      {health?.cvat_local?.online && !health?.cvat_local?.authenticated && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start justify-between gap-4 shadow-lg shadow-amber-950/20">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <h4 className="text-xs font-bold text-amber-200">Chưa xác thực tài khoản CVAT Local</h4>
+              <p className="text-[11px] text-slate-300">
+                Tài khoản CVAT hiện tại (<code className="text-amber-300 font-mono font-semibold">{health?.cvat_local?.username || "chưa cấu hình"}</code>) chưa đăng nhập được vào máy chủ.
+                Vui lòng bấm nút bên cạnh để nhập đúng tài khoản / mật khẩu CVAT của bạn.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenCVATConfig}
+            className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 cursor-pointer transition-colors shadow-sm"
+          >
+            Cấu hình tài khoản
+          </button>
+        </div>
+      )}
+
       {/* Sync Creation Form Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-        <form onSubmit={handleCreateTask} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Tên Task trên CVAT:
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+        {/* Subtle top ambient gradient line */}
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500" />
+
+        <form onSubmit={handleCreateTask} className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Field 1: Task Name */}
+            <div className="space-y-1.5">
+              <label className="flex items-center space-x-1.5 text-xs font-semibold text-slate-200">
+                <FolderPlus className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Tên Task trên CVAT:</span>
               </label>
               <input
                 type="text"
                 value={taskName}
                 onChange={(e) => setTaskName(e.target.value)}
                 placeholder="Nhập tên task..."
-                className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-4 py-2.5 text-xs text-slate-100 outline-none transition-colors"
+                className="w-full bg-slate-950 border border-slate-700/80 focus:border-cyan-500 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 outline-none transition-all shadow-inner font-mono"
                 required
               />
-              <p className="text-[10px] text-slate-500 mt-1">
-                Tên task tự động tăng dựa trên task gần nhất đã tạo.
+              <p className="text-[10px] text-slate-500">
+                Tự động đánh số theo đợt gần nhất đã tạo trên hệ thống.
               </p>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
-                <span>Mô hình AI Pre-label:</span>
-                <span className="text-[10px] text-cyan-400 font-mono font-medium">Đã chọn</span>
-              </label>
+            {/* Field 2: AI Pre-label Model */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center space-x-1.5 text-xs font-semibold text-slate-200">
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Mô hình AI Pre-label:</span>
+                </label>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-medium">
+                  Đang chọn
+                </span>
+              </div>
               {availableModels.length > 0 ? (
                 <select
                   value={selectedModelType}
                   onChange={(e) => onSelectModelType && onSelectModelType(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-3 py-2.5 text-xs text-slate-100 outline-none transition-colors cursor-pointer"
+                  className="w-full bg-slate-950 border border-slate-700/80 focus:border-cyan-500 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 outline-none transition-all cursor-pointer shadow-inner"
                 >
                   {availableModels.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.name} ({m.badge})
+                      {formatModelOptionLabel(m)}
                     </option>
                   ))}
                 </select>
@@ -184,46 +241,59 @@ export default function CVATSyncView({
                   type="text"
                   value={activeModelObj.name}
                   disabled
-                  className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-300"
+                  className="w-full bg-slate-950/60 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-400"
                 />
               )}
-              <p className="text-[10px] text-slate-500 mt-1">
-                Khung xương của model này sẽ được chuyển thành nhãn trên CVAT.
+              <p className="text-[10px] text-slate-500">
+                Khung xương 17 điểm của mô hình này sẽ được đẩy sang CVAT.
               </p>
-            </div>
-
-            <div className="flex flex-col justify-center pt-2 md:pt-0">
-              <label className="text-xs font-semibold text-slate-300 mb-2">Tùy chọn nạp nhãn:</label>
-              <div className="flex items-center space-x-2.5 p-2 bg-slate-950/60 border border-slate-800 rounded-xl">
-                <input
-                  type="checkbox"
-                  id="prelabels"
-                  checked={includePrelabels}
-                  onChange={(e) => setIncludePrelabels(e.target.checked)}
-                  className="w-4 h-4 accent-cyan-500 rounded cursor-pointer"
-                />
-                <label htmlFor="prelabels" className="text-xs font-medium text-slate-300 cursor-pointer select-none truncate">
-                  Nạp sẵn 17 điểm của <span className="text-cyan-400 font-semibold">{activeModelObj.name}</span>
-                </label>
-              </div>
             </div>
           </div>
 
-          <div className="flex items-center space-x-3 pt-2">
+          {/* Action Bar: Toggle Prelabels & Submit Button */}
+          <div className="pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <label className="flex items-center space-x-3 cursor-pointer select-none group">
+              <div
+                onClick={() => setIncludePrelabels(!includePrelabels)}
+                className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
+                  includePrelabels ? "bg-cyan-500" : "bg-slate-800"
+                }`}
+              >
+                <div
+                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
+                    includePrelabels ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-slate-200 group-hover:text-cyan-300 transition-colors flex items-center space-x-1.5">
+                  <span>Nạp sẵn khung xương AI</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                    {activeModelObj.name.split("(")[0].trim()}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  {includePrelabels
+                    ? "Ảnh tải lên CVAT sẽ có sẵn 17 keypoints để annotator kiểm tra và sửa nhanh."
+                    : "Chỉ tải ảnh thô lên CVAT, không nạp nhãn sẵn."}
+                </p>
+              </div>
+            </label>
+
             <button
               type="submit"
               disabled={isSyncing}
-              className="py-2.5 px-6 rounded-xl font-medium text-xs flex items-center space-x-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20 transition-all disabled:opacity-50 cursor-pointer active:scale-95"
+              className="py-2.5 px-6 rounded-xl font-semibold text-xs flex items-center justify-center space-x-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/25 transition-all disabled:opacity-50 cursor-pointer active:scale-95 shrink-0"
             >
               {isSyncing ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Đang kết nối CVAT & nạp nhãn {activeModelObj.name}...</span>
+                  <span>Đang kết nối CVAT & nạp nhãn...</span>
                 </>
               ) : (
                 <>
                   <Layers className="w-4 h-4" />
-                  <span>Đồng bộ sang CVAT Local ({activeModelObj.badge || activeModelObj.name})</span>
+                  <span>Đồng bộ sang CVAT ({activeModelObj.name.split("(")[0].trim()})</span>
                 </>
               )}
             </button>
