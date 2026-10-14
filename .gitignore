@@ -20,3 +20,29 @@ frontend/dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# Retrained Model Checkpoints & Runs (Chỉ giữ model gốc, không đẩy weights retrained)
+backend/weights/checkpoints/yolo/*
+backend/weights/checkpoints/rtmpose/*
+backend/weights/checkpoints/vitpose/*
+!backend/weights/checkpoints/**/.gitkeep
+backend/weights/runs/
+runs/
+*.pt
+!backend/weights/yolo26-pose.pt
+*.pth
+*.onnx
+!backend/weights/checkpoints/rtmpose/*.gitkeep
+
+# Data & Datasets generated during training/testing
+data/datasets/*
+!data/datasets/.gitkeep
+data/uploads/*
+!data/uploads/.gitkeep
+data/outputs/*
+!data/outputs/.gitkeep
+data/archives/*
+!data/archives/.gitkeep
+
+# Caches
+.cache/

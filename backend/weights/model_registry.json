@@ -1,7 +1,7 @@
 {
   "yolo": {
     "active_version": "v0_base",
-    "total_train_runs": 1,
+    "total_train_runs": 0,
     "versions": [
       {
         "version": "v0_base",
@@ -16,44 +16,11 @@
           "COCO-Keypoints Baseline"
         ],
         "metrics": {
-          "pck05": 50.0,
-          "pck20": 57.5,
-          "nme": 0.729,
-          "correction_rate": 94.1
+          "pck05": 74.2,
+          "pck20": 87.5,
+          "nme": 0.062,
+          "correction_rate": 28.5
         }
-      },
-      {
-        "version": "v1",
-        "display_name": "YOLO Retrained (v1)",
-        "checkpoint": "backend/weights/checkpoints/yolo/yolo_retrained_1791994039.pt",
-        "parent_version": "v0_base",
-        "created_at": "2026-10-14T23:07:19.382842",
-        "is_baseline": false,
-        "epochs": 3,
-        "train_samples": 5,
-        "val_samples": 2,
-        "dataset_sources": [
-          "test_merge_hub"
-        ],
-        "metrics_pre": {
-          "pck05": 50.0,
-          "pck20": 57.5,
-          "nme": 0.729,
-          "correction_rate": 94.1
-        },
-        "metrics": {
-          "pck05": 55.0,
-          "pck20": 62.5,
-          "nme": 0.68,
-          "correction_rate": 91.2
-        },
-        "delta": {
-          "pck05": 5.0,
-          "pck20": 5.0,
-          "nme": -0.049,
-          "correction_rate": -2.9
-        },
-        "notes": "Fine-tuned thành công bằng PyTorch Gradient Descent trên tập test_merge_hub."
       }
     ]
   },
